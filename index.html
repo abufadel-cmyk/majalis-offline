@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5f5b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>المحاضرات والمجالس</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root { --bg:#f6f4ef; --card:#fff; --ink:#1d2321; --mut:#6b7370; --line:#e3ded3; --pri:#1f5f5b; --pri2:#e3efed; --warn:#b26b00; --warn2:#fff4e0; --bad:#b3261e; --bad2:#fde8e6; --ok:#1e7a46; --ok2:#e4f4ea; --priv:#8a5a2b; --priv2:#f6ebdd; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141716; --card:#1d2120; --ink:#e7ebe9; --mut:#9aa39f; --line:#2f3533; --pri:#5fb3a9; --pri2:#20302e; --warn:#f0b24b; --warn2:#33270f; --bad:#ff8a80; --bad2:#3a1d1b; --ok:#6fd39a; --ok2:#173023; --priv:#e0b07a; --priv2:#33261a; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 system-ui, "Segoe UI", Tahoma, "Noto Naskh Arabic", sans-serif; }
+  body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  a { color: var(--pri); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .top { position: sticky; top: 0; z-index: 20; background: var(--pri); color: #fff; padding: 10px 14px calc(10px); display: flex; align-items: center; gap: 8px; }
+  .top h1 { font-size: 16px; margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 99px; padding: 2px 10px; font-size: 12px; background: rgba(255,255,255,.18); color: #fff; border: 0; white-space: nowrap; cursor: pointer; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1 1 auto; min-width: 0; }
+  .mut { color: var(--mut); } .sm { font-size: 13px; } .xs { font-size: 12px; } .b { font-weight: 700; }
+  .in, select.in, textarea.in { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; background: var(--card); }
+  textarea.in { min-height: 90px; }
+  .lbl { display: block; font-size: 13px; color: var(--mut); margin: 8px 0 3px; }
+  .btn { border: 1px solid var(--pri); background: var(--pri); color: #fff; border-radius: 10px; padding: 8px 14px; cursor: pointer; }
+  .btn.o { background: transparent; color: var(--pri); }
+  .btn.s { padding: 4px 10px; font-size: 13px; }
+  .btn.bad { background: var(--bad); border-color: var(--bad); }
+  .btn:disabled { opacity: .5; }
+  .seg { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; margin-bottom: 10px; }
+  .seg button { border: 1px solid var(--line); background: var(--card); border-radius: 99px; padding: 5px 12px; white-space: nowrap; cursor: pointer; font-size: 13px; }
+  .seg button.on { background: var(--pri); color: #fff; border-color: var(--pri); }
+  .nav { position: fixed; bottom: 0; inset-inline: 0; z-index: 30; display: flex; background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+  .nav button { flex: 1; border: 0; background: none; padding: 8px 2px 6px; font-size: 11px; color: var(--mut); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .nav button .i { font-size: 20px; line-height: 1.2; }
+  .nav button.on { color: var(--pri); font-weight: 700; }
+  .item { padding: 10px 2px; border-top: 1px solid var(--line); cursor: pointer; }
+  .item:first-child { border-top: 0; }
+  .t { font-weight: 700; }
+  .tag { display: inline-block; background: var(--pri2); color: var(--pri); border-radius: 99px; padding: 0 8px; font-size: 12px; margin: 1px; }
+  .ptag { display: inline-block; background: var(--priv2); color: var(--priv); border: 1px solid color-mix(in srgb, var(--priv) 35%, transparent); border-radius: 99px; padding: 0 8px; font-size: 12px; font-weight: 600; }
+  .alert { border-radius: 10px; padding: 8px 10px; margin: 6px 0; font-size: 13px; }
+  .alert.w { background: var(--warn2); color: var(--warn); } .alert.e { background: var(--bad2); color: var(--bad); } .alert.k { background: var(--ok2); color: var(--ok); } .alert.i { background: var(--pri2); color: var(--pri); }
+  .hl { background: #ffe58f; color: #000; border-radius: 3px; }
+  .txt { white-space: pre-wrap; line-height: 2; font-size: 17px; }
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal div { min-height: 48px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); padding: 2px 4px; font-size: 12px; cursor: pointer; overflow: hidden; }
+  .cal div.h { font-size: 10px; background: none; border: 0; min-height: auto; text-align: center; color: var(--mut); cursor: default; }
+  .cal div.x { opacity: .35; } .cal div.today { outline: 2px solid var(--pri); }
+  .cal .dot { display: block; height: 4px; border-radius: 2px; background: var(--pri); margin-top: 2px; } .cal .dot.p { background: var(--priv); }
+  .badge { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 99px; background: var(--warn); color: #fff; font-size: 11px; text-align: center; }
+  .pin { display: flex; gap: 10px; justify-content: center; margin: 18px 0; }
+  .pin span { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--pri); }
+  .pin span.f { background: var(--pri); }
+  .keys { display: grid; grid-template-columns: repeat(3, 72px); gap: 12px; justify-content: center; }
+  .keys button { height: 60px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); font-size: 22px; cursor: pointer; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; } .bar i { display: block; height: 100%; background: var(--pri); width: 0; transition: width .3s; }
+  .hidden { display: none !important; }
+  .sheet { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow: auto; }
+  .sheet .top { background: var(--card); color: var(--ink); border-bottom: 1px solid var(--line); }
+  .sheet .top .chip { background: var(--pri2); color: var(--pri); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 14px; }
+  .kv .k { color: var(--mut); }
+  .ln { display: flex; gap: 6px; } .ln .n { color: var(--mut); font-size: 12px; min-width: 2.2em; text-align: end; }
+  @media (min-width: 900px) { .nav { max-width: 860px; margin: 0 auto; border-radius: 14px 14px 0 0; border: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div id="app"><div class="wrap"><div class="card mut">⏳ …</div></div></div>
+<script src="app.js"></script>
+</body>
+</html>
