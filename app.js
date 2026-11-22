@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const APP_VER = '1.4';
+  const APP_VER = '1.5';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -214,7 +214,7 @@
     };
     window.onkeydown = (e) => { if (/^\d$/.test(e.key)) press(e.key); else if (e.key === 'Backspace') press('⌫'); };
   }
-  async function wipe() { await new Promise((r) => { DB.close(); const q = indexedDB.deleteDatabase('majalis-offline'); q.onsuccess = q.onerror = q.onblocked = () => r(); }); location.reload(); }
+  async function wipe() { UNLOCKED = false; await new Promise((r) => { const d0 = DB; DB = null; if (d0) d0.close(); const q = indexedDB.deleteDatabase('majalis-offline'); q.onsuccess = q.onerror = q.onblocked = () => r(); }); location.reload(); }
 
   // ---------------- 🧭 الإعداد الأول ----------------
   // «Failed to fetch»: Google ردّ بصفحة (دخول/خطأ) بدل البيانات
@@ -232,7 +232,8 @@
       '<div class="card"><div class="b">٢) الدخول</div><div class="mut sm">بنفس اسمك وكلمة مرورك في البرنامج (فارغ = المدير).</div>' +
       '<label class="lbl">الاسم</label><input class="in" id="sName" autocomplete="username"><label class="lbl">كلمة المرور</label><input class="in" id="sPw" type="password" autocomplete="current-password"></div>' +
       (err ? '<div class="alert e">' + (html ? err : esc(err)) + '</div>' : '') +
-      '<button class="btn" id="sGo" style="width:100%">اتصل وابدأ</button><div class="mut xs" style="margin-top:10px">بياناتك لا تمرّ بأي خادم آخر: تُنزَّل من برنامجك مباشرة وتُحفظ على هذا الجهاز فقط.</div></div>';
+      '<button class="btn" id="sGo" style="width:100%">اتصل وابدأ</button><div style="margin-top:10px"><a href="#" id="sImp" class="sm">📥 أو استورد نسخة من جهاز آخر (تعمل بلا إنترنت)</a></div><div class="mut xs" style="margin-top:10px">بياناتك لا تمرّ بأي خادم آخر: تُنزَّل من برنامجك مباشرة وتُحفظ على هذا الجهاز فقط.</div></div>';
+    $('#sImp').onclick = (e) => { e.preventDefault(); devImportPick(); };
     $('#sGo').onclick = async () => {
       const b = $('#sGo'); b.disabled = true; b.textContent = '⏳ اتصال…';
       try {
@@ -383,6 +384,7 @@
           '<div class="mut xs" style="margin-top:4px">' + remindNote() + '</div><div class="row" style="margin-top:6px"><button class="btn s o" id="remTest">🔔 جرّب إشعاراً الآن</button></div></div>' +
         '<div class="card"><div class="row"><button class="btn o" id="setPin">🔐 غيّر رمز PIN</button><button class="btn o" id="setLogin">👤 دخول من جديد</button><button class="btn o" id="setLock">🔒 اقفل الآن</button></div></div>' +
         '<div class="card"><div class="b">رابط البرنامج</div><div class="xs mut" dir="ltr" style="word-break:break-all">' + esc(CFG.exec) + '</div><button class="btn s o" id="setExec" style="margin-top:6px">✏️ غيّره</button></div>' +
+        '<div class="card"><div class="b">🛡️ نسخة من بيانات هذا الجهاز</div><div class="mut xs">ملف واحد فيه المجالس والفقرات والنصوص وما لم يُرفع — احفظه في الجوال أو الكمبيوتر، ويُستورد على أي جهاز ولو بلا إنترنت.</div><div class="row" style="margin-top:6px"><button class="btn s" id="bkOut">⬇️ نزّل النسخة</button><button class="btn s o" id="bkIn">📥 استورد نسخة</button></div><div id="bkRes" class="sm" style="margin-top:4px"></div></div>' +
         '<div class="card"><button class="btn bad" id="setWipe">🗑️ امسح بيانات التطبيق من هذا الجهاز</button><div class="mut xs" style="margin-top:6px">لا يمس برنامجك. ما لم يُرفع من الطابور يُفقد.</div></div>';
       return ['⚙️ الإعدادات', h];
     },
@@ -601,6 +603,34 @@
   function dayActs(iso, check) {
     for (const d of ((SNAP && SNAP.parts && SNAP.parts.daily) || [])) for (const D of [d, d.night ? Object.assign({ iso: d.night.iso }, d.night) : null]) { if (!D || D.iso !== iso) continue; for (const g of D.groups || []) for (const x of g.items || []) if (x.check === check) return x; }
     return null;
+  }
+
+  // ---------------- 🛡️ نسخة من بيانات الجهاز (تصدير/استيراد) ----------------
+  async function devExport() {
+    const box = $('#bkRes'); if (box) box.textContent = '⏳ تجهيز…';
+    const txt = []; await txtEach((r) => { txt.push([r.id, r.part, r.text, r.mod, r.src]); });
+    const data = { app: 'majalis-offline', v: 1, at: Date.now(), cfg: { exec: CFG.exec, devName: CFG.devName, user: CFG.user, lastSync: CFG.lastSync, rem: CFG.rem }, snap: SNAP, ops: OPS, txt };
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' }), name = 'نسخة-المحاضرات-والمجالس-' + isoOf(new Date()) + '.json';
+    let shared = false;
+    try { const f = new File([blob], name, { type: 'application/json' }); if (navigator.canShare && navigator.canShare({ files: [f] }) && /Android|iPhone|iPad/i.test(navigator.userAgent)) { await navigator.share({ files: [f], title: name }); shared = true; } } catch (e) {}
+    if (!shared) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
+    if (box) box.textContent = '✅ ' + name + ' (' + (blob.size / 1048576).toFixed(1) + ' MB) — احفظه خارج الجوال أيضاً.';
+  }
+  function devImportPick() {
+    const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json';
+    i.onchange = async () => { const f = i.files && i.files[0]; if (!f) return; try { await devImport(JSON.parse(await f.text())); } catch (e) { alert('ملف غير صالح: ' + (e.message || e)); } };
+    i.click();
+  }
+  async function devImport(d) {
+    if (!d || d.app !== 'majalis-offline' || !d.snap) throw new Error('ليس نسخة من هذا التطبيق');
+    if (!confirm('استيراد نسخة ' + fmtAt(d.at) + ' (' + ((d.snap.parts && d.snap.parts.maj) || []).length + ' مجلس، ' + (d.txt || []).length + ' جزء نص)؟\nتحلّ محل بيانات هذا الجهاز' + (OPS.length ? '، وما في الطابور هنا يُدمج معها.' : '.'))) return;
+    await kvSet('snap', d.snap);
+    await tx('txt', 'readwrite', (st) => st.clear()); for (let k = 0; k < (d.txt || []).length; k += 500) await txtPutMany(d.txt.slice(k, k + 500));
+    for (const o of d.ops || []) await opPut(o);
+    CFG.exec = CFG.exec || d.cfg.exec; CFG.devName = CFG.devName || d.cfg.devName; CFG.user = CFG.user || d.cfg.user; CFG.rem = CFG.rem || d.cfg.rem; CFG.lastSync = d.cfg.lastSync || d.at; CFG.txtFull = false; CFG.dev = CFG.dev || uid();
+    if (CFG.tok == null) CFG.tok = '';   // يعمل للعرض بلا دخول؛ والمزامنة تطلب الدخول حين يتوفر الإنترنت
+    await kvSet('cfg', CFG); OPS = await opsAll();
+    if (!CFG.pin) pinScreen('set', () => boot(false)); else boot(false);
   }
 
   // ---------------- 🔔 التذكير بالمجالس ----------------
@@ -862,6 +892,8 @@
     if (t.id === 'setLock') { UNLOCKED = false; lockNow(); return; }
     if (t.id === 'setExec') { setupScreen(); return; }
     if (t.id === 'remOn') { await remindSet(t.checked); return; }
+    if (t.id === 'bkOut') { devExport(); return; }
+    if (t.id === 'bkIn') { devImportPick(); return; }
     if (t.id === 'setWipe') { if (confirm('مسح كل بيانات التطبيق من هذا الجهاز؟')) wipe(); return; }
   });
   function lockNow() { pinScreen('enter', () => { window.onkeydown = null; $('#app').onclick = null; render(); }); }
