@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const APP_VER = '1.0';
+  const APP_VER = '1.1';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -54,7 +54,9 @@
     if (!CFG.exec) throw new Error('لا رابط للبرنامج');
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), timeoutMs || 300000);
     try {
-      const r = await fetch(CFG.exec, { method: 'POST', body: JSON.stringify(Object.assign({ tok: CFG.tok || '', dev: CFG.dev, devName: CFG.devName }, body)), headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow', signal: ctl.signal });
+      let r;
+      try { r = await fetch(CFG.exec, { method: 'POST', body: JSON.stringify(Object.assign({ tok: CFG.tok || '', dev: CFG.dev, devName: CFG.devName }, body)), headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow', signal: ctl.signal }); }
+      catch (eF) { if (eF.name === 'AbortError') throw eF; if (!online()) throw new Error('📴 لا إنترنت الآن.'); const e2 = new Error('FETCH'); e2.fetch = true; throw e2; }
       const t = await r.text();
       let j; try { j = JSON.parse(t); } catch (e) { throw new Error(/<html/i.test(t) ? 'البرنامج أعاد صفحة بدل البيانات — تأكد أن «رابط البرنامج» هو رابط النشر (exec) وأن النشر لـ«أي شخص».' : 'رد غير مفهوم من البرنامج.'); }
       if (j && j.auth) { const e = new Error(j.error || 'انتهت الجلسة'); e.auth = true; throw e; }
@@ -159,7 +161,7 @@
       SYNC = { busy: false, msg: '', pct: 100, err: '' };
       toast('✅ تمت المزامنة' + (pushed ? ' — رُفع ' + pushed + ' إدخال' : ''));
     } catch (e) {
-      SYNC = { busy: false, msg: '', pct: 0, err: (e.auth ? '🔐 ' : '⚠️ ') + (e.name === 'AbortError' ? 'انتهت المهلة — أعد المحاولة.' : (e.message || e)) };
+      SYNC = { busy: false, msg: '', pct: 0, err: (e.auth ? '🔐 ' : '⚠️ ') + (e.name === 'AbortError' ? 'انتهت المهلة — أعد المحاولة.' : e.fetch ? 'البرنامج لم يردّ (Failed to fetch). جرّب الرابط من «⚙️ الإعدادات»، أو تأكد أن النشر لـ«أي شخص» وأن الكود محدَّث.' : (e.message || e)) };
       if (e.auth) { CFG.tok = ''; await kvSet('cfg', CFG); }
     }
     syncUi(); render();
@@ -199,7 +201,13 @@
   async function wipe() { await new Promise((r) => { DB.close(); const q = indexedDB.deleteDatabase('majalis-offline'); q.onsuccess = q.onerror = q.onblocked = () => r(); }); location.reload(); }
 
   // ---------------- 🧭 الإعداد الأول ----------------
-  function setupScreen(err) {
+  // «Failed to fetch»: Google ردّ بصفحة (دخول/خطأ) بدل البيانات
+  const fetchHelp = () => { const t = (CFG.exec || '').replace(/\?.*$/, '') + '?api=ping';
+    return '<b>البرنامج لم يردّ على التطبيق.</b> افتح هذا الرابط في نفس المتصفح لتعرف السبب: <a href="' + esc(t) + '" target="_blank" dir="ltr" style="word-break:break-all">' + esc(t) + '</a>' +
+      '<ul style="margin:6px 0 0;padding-inline-start:18px"><li>صفحة دخول Google أو «ليس لديك إذن» ← النشر ليس لـ«أي شخص»: Apps Script ← نشر ← إدارة عمليات النشر ← ✏️ ← «مَن لديه إذن الوصول: <b>أي شخص</b>» ← نشر.</li>' +
+      '<li>صفحة البرنامج نفسه، أو «Script function not found» ← الكود لم يُحدَّث بعد: حدّثه بملف zip الأخير.</li>' +
+      '<li>سطر يبدأ بـ {"ok":true ← الرابط سليم؛ أعد المحاولة هنا.</li></ul>'; };
+  function setupScreen(err, html) {
     window.onkeydown = null; $('#app').onclick = null;
     $('#app').innerHTML = '<div class="top"><h1>📴 المحاضرات والمجالس — بلا إنترنت</h1></div><div class="wrap" style="max-width:560px">' +
       '<div class="card"><div class="b">١) رابط برنامجك</div><div class="mut sm">من البرنامج: «النسخ الاحتياطي والنظام» ← «📴 التطبيق بلا إنترنت» ← «📋 انسخ رابط برنامجك»، والصقه هنا.</div>' +
@@ -207,7 +215,7 @@
       '<label class="lbl">اسم هذا الجهاز (يظهر لك في البرنامج)</label><input class="in" id="sDev" value="' + esc(CFG.devName || defaultDevName()) + '"></div>' +
       '<div class="card"><div class="b">٢) الدخول</div><div class="mut sm">بنفس اسمك وكلمة مرورك في البرنامج (فارغ = المدير).</div>' +
       '<label class="lbl">الاسم</label><input class="in" id="sName" autocomplete="username"><label class="lbl">كلمة المرور</label><input class="in" id="sPw" type="password" autocomplete="current-password"></div>' +
-      (err ? '<div class="alert e">' + esc(err) + '</div>' : '') +
+      (err ? '<div class="alert e">' + (html ? err : esc(err)) + '</div>' : '') +
       '<button class="btn" id="sGo" style="width:100%">اتصل وابدأ</button><div class="mut xs" style="margin-top:10px">بياناتك لا تمرّ بأي خادم آخر: تُنزَّل من برنامجك مباشرة وتُحفظ على هذا الجهاز فقط.</div></div>';
     $('#sGo').onclick = async () => {
       const b = $('#sGo'); b.disabled = true; b.textContent = '⏳ اتصال…';
@@ -221,7 +229,7 @@
         if (!l.ok) throw new Error(l.error || 'تعذّر الدخول');
         CFG.tok = l.tok; CFG.user = l.user; await kvSet('cfg', CFG);
         if (!CFG.pin) pinScreen('set', () => { boot(true); }); else boot(true);
-      } catch (e) { setupScreen(e.message || String(e)); }
+      } catch (e) { setupScreen(e.fetch ? fetchHelp() : (e.message || String(e)), !!e.fetch); }
     };
   }
   const defaultDevName = () => /Android/i.test(navigator.userAgent) ? 'جوال أندرويد' : /iPhone|iPad/i.test(navigator.userAgent) ? 'آيفون' : /Windows/i.test(navigator.userAgent) ? 'كمبيوتر ويندوز' : 'جهاز';
