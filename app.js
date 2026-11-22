@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const APP_VER = '1.1';
+  const APP_VER = '1.2';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -533,7 +533,11 @@
     pre = pre || {}; const edit = !!m, priv = edit ? isPriv(m) : !!pre.priv, B = (SNAP && SNAP.parts && SNAP.parts.boot) || {};
     const v = (k) => esc(edit ? (m[k] || '') : (pre[k] || ''));
     const dl = (id, arr) => '<datalist id="' + id + '">' + (arr || []).map((x) => '<option value="' + esc(x) + '"></option>').join('') + '</datalist>';
-    const lecTitles = LEC.map((l) => l.title);
+    // قائمة كل خانة من فقرات نوعها فقط (كما في البرنامج)، وإلا كل الفقرات
+    const LS = (SNAP && SNAP.parts && SNAP.parts.lists) || {}, lecTitles = LS.lectures || LEC.map((l) => l.title), exOf = (k) => { const x = (LS.extras || []).find((y) => y.key === k); return x ? x.lectures : LEC.map((l) => l.title); };
+    // ⏰ الوقت بنظام 24 ساعة (ساعة + دقيقة)، لا يتبع إعداد الجهاز
+    const tv = String(edit ? m.time || '' : '').split(':'), th = tv[0] || '', tmn = tv[1] || '';
+    const timeHtml = '<div class="row" style="gap:4px;flex-wrap:nowrap" dir="ltr"><select class="in" id="fTH" style="width:auto"><option value="">--</option>' + Array.from({ length: 24 }, (_, i) => pad(i)).map((h) => '<option' + (h === th ? ' selected' : '') + '>' + h + '</option>').join('') + '</select><b>:</b><select class="in" id="fTM" style="width:auto">' + Array.from(new Set(['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].concat(tmn ? [tmn] : []))).sort().map((x) => '<option' + (x === (tmn || '00') ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></div>';
     const field = (lbl, inner) => '<label class="lbl">' + lbl + '</label>' + inner;
     const el = sheet(edit ? '✏️ تعديل مجلس' : (priv ? '🕯️ مجلس خاص جديد' : '🕌 مجلس جديد'),
       '<div class="card">' +
@@ -543,12 +547,12 @@
       field(priv ? 'المكان (من الدليل أو اكتبه)' : 'الحسينية', '<input class="in" id="fHus" list="dlH" value="' + v('husseiniya') + '">' + dl('dlH', B.husseiniyas)) +
       field(priv ? 'المسؤول من العائلة' : 'صاحب المجلس / المسؤول', '<input class="in" id="fOwner" list="dlO" value="' + v('owner') + '">' + dl('dlO', B.owners)) +
       (priv ? field('هاتفه', '<input class="in" id="fPhone" type="tel" dir="ltr" value="' + v('ophone') + '">') : '') +
-      '<div class="row"><div class="grow">' + field('التاريخ', '<input class="in" id="fDate" type="date" value="' + esc(edit ? m.iso : (pre.iso || isoOf(new Date()))) + '">') + '</div><div class="grow">' + field('الوقت', '<input class="in" id="fTime" type="time" value="' + v('time') + '">') + '</div>' +
+      '<div class="row"><div class="grow">' + field('التاريخ', '<input class="in" id="fDate" type="date" value="' + esc(edit ? m.iso : (pre.iso || isoOf(new Date()))) + '"><div class="mut xs" id="fDateH"></div>') + '</div><div class="grow">' + field('الوقت', timeHtml) + '</div>' +
       (priv && !edit ? '<div style="width:90px">' + field('الليالي', '<input class="in" id="fNights" type="number" min="1" max="10" value="1">') + '</div>' : '') + '</div>' +
       field('الحالة', '<select class="in" id="fSt">' + (B.statuses || ['مجدول', 'تمّ', 'ملغى']).map((s) => '<option' + ((edit ? m.status : 'مجدول') === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select>') +
-      '</div><div class="card"><div class="b">الفقرات' + (priv && !edit ? ' <span class="mut xs">(لليلة الأولى فقط إن كانت عدة ليالٍ)</span>' : '') + '</div>' + dl('dlL', lecTitles) +
+      '</div><div class="card"><div class="b">الفقرات' + (priv && !edit ? ' <span class="mut xs">(لليلة الأولى فقط إن كانت عدة ليالٍ)</span>' : '') + '</div>' + dl('dlL', lecTitles) + EXTRAS.map((e) => dl('dlX-' + e.key, exOf(e.key))).join('') +
       field('📚 المحاضرة', '<input class="in" id="fLec" list="dlL" value="' + esc(edit ? String(m.lecture || '').split('\n')[0] : '') + '">') +
-      EXTRAS.map((e) => field(esc(e.icon + ' ' + e.label), '<input class="in" data-fx="' + e.key + '" list="dlL" value="' + esc(edit ? String(m[e.key] || '').split('\n')[0] : '') + '">')).join('') +
+      EXTRAS.map((e) => field(esc(e.icon + ' ' + e.label), '<input class="in" data-fx="' + e.key + '" list="dlX-' + e.key + '" value="' + esc(edit ? String(m[e.key] || '').split('\n')[0] : '') + '">')).join('') +
       '<div id="fWarn"></div>' + field('ملاحظات', '<textarea class="in" id="fNotes">' + v('notes') + '</textarea>') + '</div>' +
       '<button class="btn" id="fSave" style="width:100%">💾 احفظ' + (online() ? '' : ' (يُرفع حين يعود الإنترنت)') + '</button>');
     // ⚠️ هل قرأت هذه الفقرة لهذه العائلة / في هذا المكان؟ (من بيانات الجهاز)
@@ -562,6 +566,10 @@
       }).join('');
     };
     el.addEventListener('input', (e) => { if (e.target.matches('#fLec,[data-fx],#fFam,#fHus')) warn(); });
+    // 🕌 اختيار الحسينية من الدليل يملأ مسؤولها ووقتها (للمجلس العام)
+    el.addEventListener('change', (e) => { if (e.target.id !== 'fHus' || priv) return; const H = ((SNAP && SNAP.parts && SNAP.parts.hus) || []).find((x) => x.name === e.target.value.trim()); if (!H) return; const o = $('#fOwner', el); if (H.owner && (!o.value || o.dataset.auto)) { o.value = H.owner; o.dataset.auto = '1'; } const t = /^(\d{1,2}):(\d{2})/.exec(H.time || ''); if (t && !$('#fTH', el).value) { $('#fTH', el).value = pad(+t[1]); const mm = $('#fTM', el); if (![...mm.options].some((op) => op.value === t[2])) mm.add(new Option(t[2])); mm.value = t[2]; } });
+    el.addEventListener('input', (e) => { if (e.target.id === 'fOwner') delete e.target.dataset.auto; });
+    const dH = () => { const v = $('#fDate', el).value; $('#fDateH', el).textContent = v ? dayCell(v) + ' · ' + hijriOf(v) : ''; }; $('#fDate', el).addEventListener('input', dH); $('#fDate', el).addEventListener('change', dH); dH();
     el.addEventListener('change', (e) => { if (e.target.id === 'fFam' && priv) { const h = (B.famHints || {})[famNames(e.target.value)[0]]; if (h) { if (!$('#fOwner', el).value && h.owner) $('#fOwner', el).value = h.owner; if (!$('#fPhone', el).value && h.ophone) $('#fPhone', el).value = h.ophone; if (!$('#fFamNote', el).value && h.famnote) $('#fFamNote', el).value = h.famnote; if (!$('#fHus', el).value && h.place) $('#fHus', el).value = h.place; } } });
     warn();
     $('#fSave', el).onclick = async () => {
@@ -572,7 +580,7 @@
       if (edit) { const keep = (k) => String(m[k] || '').split('\n').slice(1).join('\n'); ['lecture'].concat(EXTRAS.map((e) => e.key)).forEach((k) => { const rest = keep(k); if (rest) rec[k] = [rec[k], rest].filter(Boolean).join('\n'); }); }
       if (priv) { Object.assign(rec, { mtype: g('#fType'), family: famNames(g('#fFam')).join('، '), famnote: g('#fFamNote'), deceased: g('#fDec'), ophone: g('#fPhone') }); if (!rec.family) return toast('🕯️ اكتب اسم العائلة'); if (!rec.mtype) return toast('🕯️ اختر نوع المجلس'); }
       if (!rec.husseiniya) return toast('اكتب المكان');
-      const iso = g('#fDate'), time = g('#fTime');
+      const iso = g('#fDate'), time = g('#fTH') ? g('#fTH') + ':' + g('#fTM') : '';
       if (!iso) return toast('اختر التاريخ');
       const opts = { conflicts: 'ask' };
       if (edit) {
