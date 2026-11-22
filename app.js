@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const APP_VER = '1.3';
+  const APP_VER = '1.4';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -59,6 +59,10 @@
       catch (eF) { if (eF.name === 'AbortError') throw eF; if (!online()) throw new Error('📴 لا إنترنت الآن.'); const e2 = new Error('FETCH'); e2.fetch = true; throw e2; }
       const t = await r.text();
       let j; try { j = JSON.parse(t); } catch (e) { throw new Error(/<html/i.test(t) ? 'البرنامج أعاد صفحة بدل البيانات — تأكد أن «رابط البرنامج» هو رابط النشر (exec) وأن النشر لـ«أي شخص».' : 'رد غير مفهوم من البرنامج.'); }
+      if (j && j.revoked) {   // ⛔ أُوقف هذا الجهاز من البرنامج
+        if (j.wipe) { try { sessionStorage.setItem('offRevoked', '1'); } catch (e) {} await wipe(); throw new Error('wiped'); }
+        CFG.tok = ''; await kvSet('cfg', CFG); setTimeout(() => setupScreen(j.error || 'أُوقف هذا الجهاز من البرنامج.'), 0);
+      }
       if (j && j.auth) { const e = new Error(j.error || 'انتهت الجلسة'); e.auth = true; throw e; }
       return j;
     } finally { clearTimeout(tm); }
@@ -106,11 +110,18 @@
       else if (o.lec) { const l = LEC.find((x) => x.title === o.lec.title) || LEC.find((x) => x.row === o.lec.row); if (l) { if (o.lec.rating != null) l.rate = o.lec.rating; if (o.lec.notes != null) l.notes = o.lec.notes; l._pend = o.id; } }
     });
     MAJ.sort((a, b) => (a.iso + a.time).localeCompare(b.iso + b.time));
+    // 📇 الدليل: ما في الطابور من تعديلات يظهر فوراً
+    HUSL = (Array.isArray(P.hus) ? P.hus : []).map((h) => Object.assign({}, h));
+    OPS.forEach((o) => { if (o.fn !== 'Hus_save' || o.st === 'done') return; const r = o.args[0] || {}, h = HUSL.find((x) => x.name === r.name); if (!h) return;
+      Object.assign(h, { owner: r.owner, time: r.time, notes: r.notes, address: r.address, addressText: r.address || h.addressText, mapRaw: r.map, _pend: o.id });
+      if (r.phone != null) { const ph = String(r.phone).split(/[\n،,;\/]+/).map((x) => x.trim()).filter(Boolean); h.phones = ph.map((x) => ({ phone: x, wa: '' })); h.phone = ph[0] || ''; } });
     // ✔️ «تمّ» في الأعمال: ما في الطابور يغلب ما في اللقطة
     DONE = {}; OPS.forEach((o) => { if (o.fn === 'Daily_done' && o.st !== 'done') DONE[o.args[0] + '|' + o.args[1]] = !!o.args[2]; });
     remindPlan();
   }
-  let DONE = {};
+  let DONE = {}, HUSL = [];
+  // بصمة مكان في الدليل (نفسها في البرنامج Off_husHash_)
+  const husHash = (h) => { const t = ['owner', 'time', 'notes', 'address', 'mapRaw'].map((k) => String(h[k] == null ? '' : h[k]).replace(/\s+/g, ' ').trim()).join('¦'); let x = 0; for (let i = 0; i < t.length; i++) x = ((x << 5) - x + t.charCodeAt(i)) | 0; return String(x); };
   const isDone = (iso, x) => { const k = iso + '|' + x.check; return k in DONE ? DONE[k] : !!x.done; };
   // كل قراءات فقرة: من سجل المجالس (المحاضرة وكل خانة)
   const readsOf = (title) => { const k = nz(title); return MAJ.filter((m) => m.status !== 'ملغى' && majItems(m).some((x) => nz(x.t) === k)); };
@@ -131,7 +142,7 @@
     for (const o of pend) {
       const x = r.res[o.id]; if (!x) continue;
       if (x.ok) { await opDel(o.id); n++; continue; }
-      o.st = x.conflict ? 'conflict' : x.ask ? 'ask' : 'error'; o.err = x.error || (x.res && x.res.error) || ''; o.res = x.res || null; o.now = x.now || null; o.gone = !!x.gone;
+      o.st = x.conflict ? 'conflict' : x.ask ? 'ask' : 'error'; o.err = x.error || (x.res && x.res.error) || ''; o.res = x.res || null; o.now = x.now || null; o.nowHus = x.nowHus || null; o.gone = !!x.gone;
       await opPut(o);
     }
     OPS = await opsAll();
@@ -328,7 +339,7 @@
     },
     fam() { return ['👪 العوائل', '<div class="row" style="margin-bottom:8px"><input class="in" id="fq" type="search" placeholder="🔎 العائلة، ملاحظتها، المرحوم، المسؤول أو هاتفه…" value="' + esc(SUB.q || '') + '"></div>' + famListHtml()]; },
     hus() {
-      const L = ((SNAP && SNAP.parts && SNAP.parts.hus) || []).filter((x) => !x.error);
+      const L = HUSL.filter((x) => !x.error);
       const types = Array.from(new Set(L.map((x) => x.type || 'حسينية')));
       return ['📇 الدليل (' + L.length + ')', '<div class="card"><input class="in" id="hq" type="search" placeholder="🔎 الاسم، المنطقة، المسؤول، الهاتف…" value="' + esc(SUB.q || '') + '"><div class="seg" style="margin:6px 0 0">' + ['', ...types].map((t) => '<button data-htype="' + esc(t) + '" class="' + ((SUB.t || '') === t ? 'on' : '') + '">' + esc(t || 'الكل') + '</button>').join('') + '</div></div><div class="card" id="hlist"></div>'];
     },
@@ -352,7 +363,8 @@
       L.forEach((o) => {
         const st = { pending: '⏳ بانتظار الإنترنت', error: '⚠️ لم يُرفع', conflict: '⚖️ تعارض', ask: '❓ يحتاج قرارك' }[o.st] || o.st;
         h += '<div class="card"><div class="row"><span class="grow t">' + esc(o.label || o.fn) + '</span><span class="tag">' + st + '</span></div><div class="mut xs">' + esc(fmtAt(o.at)) + '</div>' + (o.desc ? '<div class="sm">' + esc(o.desc) + '</div>' : '') + (o.err ? '<div class="alert e">' + esc(o.err) + '</div>' : '');
-        if (o.st === 'conflict' && o.now) h += '<div class="alert w">في البرنامج الآن: ' + esc(o.now.husseiniya + ' · ' + o.now.iso + ' ' + o.now.time + ' · ' + o.now.status) + (majItems(o.now).length ? '<br>' + majItems(o.now).map((x) => esc(x.icon + ' ' + x.t)).join(' · ') : '') + '</div><div class="row"><button class="btn s" data-qforce="' + o.id + '">طبّق تعديلي رغم ذلك</button><button class="btn s o" data-qdel="' + o.id + '">اترك تعديلي (احذفه)</button></div>';
+        if (o.st === 'conflict' && o.nowHus) h += '<div class="alert w">في البرنامج الآن: 👤 ' + esc(o.nowHus.owner || '—') + ' · ⏰ ' + esc(o.nowHus.time || '—') + (o.nowHus.address ? ' · 📍 ' + esc(o.nowHus.address) : '') + (o.nowHus.notes ? '<br>📝 ' + esc(o.nowHus.notes) : '') + '</div><div class="row"><button class="btn s" data-qforce="' + o.id + '">طبّق تعديلي رغم ذلك</button><button class="btn s o" data-qdel="' + o.id + '">اترك تعديلي (احذفه)</button></div>';
+        else if (o.st === 'conflict' && o.now) h += '<div class="alert w">في البرنامج الآن: ' + esc(o.now.husseiniya + ' · ' + o.now.iso + ' ' + o.now.time + ' · ' + o.now.status) + (majItems(o.now).length ? '<br>' + majItems(o.now).map((x) => esc(x.icon + ' ' + x.t)).join(' · ') : '') + '</div><div class="row"><button class="btn s" data-qforce="' + o.id + '">طبّق تعديلي رغم ذلك</button><button class="btn s o" data-qdel="' + o.id + '">اترك تعديلي (احذفه)</button></div>';
         else if (o.st === 'ask' && o.res && o.res.needConfirm === 'newHusseiniya') h += '<div class="alert w">«' + esc(o.res.name) + '» ليس في دليل الحسينيات والمساجد.</div><div class="row"><select class="in" id="pt-' + o.id + '" style="width:auto">' + ['حسينية', 'مسجد', 'ديوانية', 'صالة', 'منزل'].map((t) => '<option>' + t + '</option>').join('') + '</select><button class="btn s" data-qplace="' + o.id + '">أضفه للدليل</button><button class="btn s o" data-qfree="' + o.id + '">نص حر</button></div>';
         else if (o.st === 'ask' && o.res && o.res.needConfirm === 'newLecture') h += '<div class="alert w">الفقرة «' + esc(o.res.name || '') + '» ليست في الأرشيف.</div><div class="row"><button class="btn s" data-qaddlec="' + o.id + '">أضفها للأرشيف</button><button class="btn s o" data-qkeepfree="' + o.id + '">احفظها نصاً حراً</button></div>';
         else if (o.st === 'ask' && o.res && o.res.needDup) h += '<div class="alert w">🔁 مسجّل من قبل في «' + esc(o.res.husseiniya || '') + '» في نفس اليوم: ' + esc((o.res.dups || []).map((d) => d.iso + ' ' + (d.withTime || '') + (d.lecture ? ' — ' + d.lecture : '')).join('، ')) + '</div><div class="row"><button class="btn s" data-qdup="' + o.id + '">احفظه مجلساً إضافياً</button></div>';
@@ -367,6 +379,7 @@
         '<span class="k">الفقرات</span><span>' + LEC.length + '</span><span class="k">المجالس</span><span>' + MAJ.length + '</span><span class="k">النصوص</span><span id="txtN">…</span><span class="k">الإصدار</span><span>' + APP_VER + '</span></div>' +
         '<div class="row" style="margin-top:10px"><button class="btn" data-sync="1">🔄 زامن الآن</button><button class="btn o" data-sync="full">📄 أعد تنزيل النصوص كلها</button></div></div>' +
         '<div class="card"><div class="b">🔔 تذكير بالمجالس</div><label class="row sm" style="margin-top:6px"><input type="checkbox" id="remOn"' + (CFG.rem && CFG.rem.on ? ' checked' : '') + '> ذكّرني قبل كل مجلس بـ <select class="in" id="remMin" style="width:auto">' + [15, 30, 60, 90, 120, 180].map((n) => '<option value="' + n + '"' + (((CFG.rem && CFG.rem.min) || 60) === n ? ' selected' : '') + '>' + (n < 60 ? n + ' دقيقة' : n === 60 ? 'ساعة' : n === 120 ? 'ساعتين' : (n / 60) + ' ساعات') + '</option>').join('') + '</select></label>' +
+          '<label class="row sm" style="margin-top:6px">🌙 ملخص مجالس الغد كل مساء الساعة <select class="in" id="remEve" style="width:auto"><option value="">— لا —</option>' + ['18:00', '19:00', '20:00', '21:00', '22:00', '23:00'].map((x) => '<option' + ((CFG.rem && CFG.rem.eve) === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label>' +
           '<div class="mut xs" style="margin-top:4px">' + remindNote() + '</div><div class="row" style="margin-top:6px"><button class="btn s o" id="remTest">🔔 جرّب إشعاراً الآن</button></div></div>' +
         '<div class="card"><div class="row"><button class="btn o" id="setPin">🔐 غيّر رمز PIN</button><button class="btn o" id="setLogin">👤 دخول من جديد</button><button class="btn o" id="setLock">🔒 اقفل الآن</button></div></div>' +
         '<div class="card"><div class="b">رابط البرنامج</div><div class="xs mut" dir="ltr" style="word-break:break-all">' + esc(CFG.exec) + '</div><button class="btn s o" id="setExec" style="margin-top:6px">✏️ غيّره</button></div>' +
@@ -430,7 +443,7 @@
         if (!ws.length) { out.innerHTML = ''; return; }
         const L = LEC.filter((l) => hasAll(nz([l.title, l.orig, l.folder, l.tags.join(' '), l.notes, l.lecturer, l.poet, l.poems].join(' ')), ws)).slice(0, 60);
         const M = majFilter(MAJ, q).slice(-40).reverse();
-        const H = ((SNAP && SNAP.parts && SNAP.parts.hus) || []).filter((x) => hasAll(nz([x.name, x.area, x.owner, x.phone, (x.more || []).map((c) => c.name + ' ' + (c.phone || '')).join(' ')].join(' ')), ws)).slice(0, 20);
+        const H = HUSL.filter((x) => hasAll(nz([x.name, x.area, x.owner, x.phone, (x.more || []).map((c) => c.name + ' ' + (c.phone || '')).join(' ')].join(' ')), ws)).slice(0, 20);
         let h = '';
         if (L.length) h += '<div class="card"><div class="b">📚 الفقرات (' + L.length + ')</div>' + L.map((l) => lecRow(l)).join('') + '</div>';
         if (M.length) h += '<div class="card"><div class="b">📅 المجالس (' + M.length + ')</div>' + M.map(majRow).join('') + '</div>';
@@ -452,10 +465,11 @@
       let tm; $('#lq').oninput = () => { clearTimeout(tm); tm = setTimeout(draw, 250); }; $('#lf').onchange = draw; $('#lr').onchange = draw; $('#ln').onchange = draw; draw();
     },
     hus() {
-      const draw = () => { SUB.q = $('#hq').value; const ws = words(SUB.q), qd = AR_DIG(SUB.q).replace(/\D/g, ''); const L = ((SNAP && SNAP.parts && SNAP.parts.hus) || []).filter((x) => (!SUB.t || (x.type || 'حسينية') === SUB.t) && (!ws.length || (qd.length >= 4 && JSON.stringify(x.phones || []).replace(/\D/g, '').includes(qd)) || hasAll(nz([x.name, x.area, x.owner, x.notes, (x.more || []).map((c) => c.name).join(' ')].join(' ')), ws))); $('#hlist').innerHTML = L.map(husRow).join('') || '<div class="mut">لا نتائج.</div>'; };
+      const draw = () => { SUB.q = $('#hq').value; const ws = words(SUB.q), qd = AR_DIG(SUB.q).replace(/\D/g, ''); const L = HUSL.filter((x) => (!SUB.t || (x.type || 'حسينية') === SUB.t) && (!ws.length || (qd.length >= 4 && JSON.stringify(x.phones || []).replace(/\D/g, '').includes(qd)) || hasAll(nz([x.name, x.area, x.owner, x.notes, (x.more || []).map((c) => c.name).join(' ')].join(' ')), ws))); $('#hlist').innerHTML = L.map(husRow).join('') || '<div class="mut">لا نتائج.</div>'; };
       let tm; $('#hq').oninput = () => { clearTimeout(tm); tm = setTimeout(draw, 250); }; draw();
     },
-    set() { txtCount().then((n) => { const e = $('#txtN'); if (e) e.textContent = n + ' جزء'; }); const mn = $('#remMin'); if (mn) mn.onchange = async () => { CFG.rem = Object.assign({}, CFG.rem, { min: +mn.value }); await kvSet('cfg', CFG); remindPlan(); toast('✓ حُفظ'); }; },
+    set() { txtCount().then((n) => { const e = $('#txtN'); if (e) e.textContent = n + ' جزء'; }); const mn = $('#remMin'); if (mn) mn.onchange = async () => { CFG.rem = Object.assign({}, CFG.rem, { min: +mn.value }); await kvSet('cfg', CFG); remindPlan(); toast('✓ حُفظ'); };
+      const ev = $('#remEve'); if (ev) ev.onchange = async () => { if (ev.value && 'Notification' in window && Notification.permission !== 'granted') { const p1 = await Notification.requestPermission(); if (p1 !== 'granted') { toast('⚠️ لم تُسمح الإشعارات'); ev.value = ''; return; } } CFG.rem = Object.assign({ min: 60 }, CFG.rem, { eve: ev.value }); await kvSet('cfg', CFG); await remindPlan(); if (ev.value) { try { const reg = await navigator.serviceWorker.ready; if (reg.periodicSync) await reg.periodicSync.register('remind', { minInterval: 15 * 60000 }); } catch (e) {} } toast(ev.value ? '🌙 ملخص الغد الساعة ' + ev.value : '✓ أُلغي ملخص الغد'); }; },
     rep() { const hs0 = $('#rh'); if (hs0) hs0.onchange = () => { SUB.h = hs0.value; render(); }; const i = $('#rq'); if (!i) return; let tm; i.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { SUB.q = i.value; const v1 = i.value; render(); const j = $('#rq'); if (j) { j.focus(); j.setSelectionRange(v1.length, v1.length); } }, 350); }; const hs = $('#rh'); if (hs) hs.onchange = () => { SUB.h = hs.value; render(); }; },
   };
   function husRow(x) {
@@ -491,16 +505,35 @@
     return { L, act, done, up, cancel: L.length - act.length, titles: Object.values(T).sort((a, b) => b.w.length - a.w.length || a.t.localeCompare(b.t, 'ar')) };
   }
   function husRepHtml(name) {
-    const D = husRepData(name), H = ((SNAP && SNAP.parts && SNAP.parts.hus) || []).find((x) => x.name === name);
+    const D = husRepData(name), H = HUSL.find((x) => x.name === name);
     REP_TXT = ['📊 ' + name, 'المجالس: ' + D.act.length + ' (قُرئ ' + D.done.length + '، قادم ' + D.up.length + (D.cancel ? '، ملغى ' + D.cancel : '') + ')', D.done.length ? 'أول مجلس: ' + D.done[0].iso.replace(/-/g, '/') + ' · آخر مجلس: ' + D.done[D.done.length - 1].iso.replace(/-/g, '/') : '', '',
       '📚 ما قرأته فيه:', ...D.titles.map((t) => '• ' + t.icon + ' ' + t.t + ' — ' + t.w.map((x) => x.replace(/-/g, '/')).join('، ')), '', D.up.length ? '⏭ القادم:' : '', ...D.up.map((m) => '• ' + dayCell(m.iso) + ' ' + (m.time || '') + (majItems(m).length ? ' — ' + majItems(m).map((x) => x.t).join('، ') : ''))].filter((x, i, a) => x !== '' || a[i - 1] !== '').join('\n');
-    return '<div class="card"><div class="row"><span class="grow t">' + esc(name) + '</span><button class="btn s" data-rcopy="1">📋 انسخ</button><button class="btn s o" data-rinv="' + esc(name) + '">📨 رسالة الاتفاق</button></div>' + (H && H.owner ? '<div class="mut sm">👤 ' + esc(H.owner) + (H.phone ? ' · <a href="tel:' + esc(H.phone) + '" dir="ltr">' + esc(H.phone) + '</a>' : '') + '</div>' : '') +
+    return '<div class="card"><div class="row"><span class="grow t">' + esc(name) + '</span><button class="btn s" data-rcopy="1">📋 انسخ</button><button class="btn s o" data-rinv="' + esc(name) + '">📨 رسالة الاتفاق</button>' + (H ? '<button class="btn s o" data-hused="' + esc(name) + '">✏️ عدّل بياناته</button>' : '') + '</div>' + (H && H._pend ? '<div class="alert i">⏳ تعديلك على بياناته بانتظار الرفع</div>' : '') + (H && H.owner ? '<div class="mut sm">👤 ' + esc(H.owner) + (H.phone ? ' · <a href="tel:' + esc(H.phone) + '" dir="ltr">' + esc(H.phone) + '</a>' : '') + '</div>' : '') +
       '<div class="kv" style="margin-top:6px"><span class="k">المجالس</span><span><b>' + D.act.length + '</b> (✔️ ' + D.done.length + ' · ⏭ ' + D.up.length + (D.cancel ? ' · 🚫 ' + D.cancel : '') + ')</span>' + (D.done.length ? '<span class="k">أول/آخر</span><span>' + esc(D.done[0].iso.replace(/-/g, '/') + ' ← ' + D.done[D.done.length - 1].iso.replace(/-/g, '/')) + '</span>' : '') + '<span class="k">فقرات مختلفة</span><span>' + D.titles.length + '</span></div></div>' +
       (D.up.length ? '<div class="card"><div class="b">⏭ القادم (' + D.up.length + ')</div>' + D.up.map(majRow).join('') + '</div>' : '') +
       '<div class="card"><div class="b">📚 ما قرأته فيه (' + D.titles.length + ')</div>' + (D.titles.map((t) => { const l = LEC.find((y) => nz(y.title) === nz(t.t)); return '<div class="item"' + (l ? ' data-lec="' + l.row + '"' : '') + '>' + esc(t.icon + ' ' + t.t) + (t.w.length > 1 ? ' <span class="tag">' + t.w.length + '×</span>' : '') + '<div class="mut xs">' + esc(t.w.map((x) => x.replace(/-/g, '/')).join(' · ')) + '</div></div>'; }).join('') || '<div class="mut sm">لا قراءات بعد.</div>') + '</div>' +
       '<div class="card"><div class="b">🗂️ كل مجالسه (' + D.L.length + ')</div>' + D.L.slice().reverse().slice(0, 200).map(majRow).join('') + '</div>';
   }
-  function openHusRep(name) { const el = sheet('📊 ' + esc(name), husRepHtml(name)); el.addEventListener('click', (e) => { const mj = e.target.closest('[data-maj]'); if (mj) openMaj(mj.getAttribute('data-maj')); const lc = e.target.closest('[data-lec]'); if (lc) openLec(lc.getAttribute('data-lec')); if (e.target.closest('[data-rcopy]')) copyText(REP_TXT); const iv = e.target.closest('[data-rinv]'); if (iv) openInv(iv.getAttribute('data-rinv')); }); }
+  function openHusRep(name) { const el = sheet('📊 ' + esc(name), husRepHtml(name)); el.addEventListener('click', (e) => { const mj = e.target.closest('[data-maj]'); if (mj) openMaj(mj.getAttribute('data-maj')); const lc = e.target.closest('[data-lec]'); if (lc) openLec(lc.getAttribute('data-lec')); if (e.target.closest('[data-rcopy]')) copyText(REP_TXT); const iv = e.target.closest('[data-rinv]'); if (iv) openInv(iv.getAttribute('data-rinv')); const he = e.target.closest('[data-hused]'); if (he) husForm(he.getAttribute('data-hused')); }); }
+  // 📇 تعديل مكان في الدليل (المسؤول، الهواتف، الوقت، العنوان، الموقع، الملاحظات) — يُرفع كالمجالس
+  function husForm(name) {
+    const H = HUSL.find((x) => x.name === name); if (!H) return;
+    const tm = /^(\d{1,2}):(\d{2})/.exec(H.time || '') || [], th = tm[1] ? pad(+tm[1]) : '', tmi = tm[2] || '';
+    const el = sheet('✏️ ' + esc(name), '<div class="card"><label class="lbl">صاحب الحسينية / المسؤول</label><input class="in" id="hOw" value="' + esc(H.owner || '') + '">' +
+      '<label class="lbl">الهواتف (افصل بينها بالفاصلة «،»)</label><input class="in" id="hPh" dir="ltr" type="tel" value="' + esc((H.phones || []).map((p1) => p1.phone).join('، ') || H.phone || '') + '">' +
+      '<label class="lbl">الوقت المعتاد</label><div class="row" style="gap:4px;flex-wrap:nowrap" dir="ltr"><select class="in" id="hTH" style="width:auto"><option value="">--</option>' + Array.from({ length: 24 }, (_, i) => pad(i)).map((x) => '<option' + (x === th ? ' selected' : '') + '>' + x + '</option>').join('') + '</select><b>:</b><select class="in" id="hTM" style="width:auto">' + Array.from(new Set(['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].concat(tmi ? [tmi] : []))).sort().map((x) => '<option' + (x === (tmi || '00') ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></div>' +
+      '<label class="lbl">العنوان</label><textarea class="in" id="hAd" style="min-height:60px">' + esc(H.address || '') + '</textarea>' +
+      '<label class="lbl">رابط الموقع (خرائط جوجل) أو الإحداثيات</label><input class="in" id="hMp" dir="ltr" value="' + esc(H.mapRaw || '') + '">' +
+      '<label class="lbl">ملاحظات</label><textarea class="in" id="hNt" style="min-height:60px">' + esc(H.notes || '') + '</textarea></div>' +
+      '<button class="btn" id="hSave" style="width:100%">💾 احفظ' + (online() ? '' : ' (يُرفع حين يعود الإنترنت)') + '</button>');
+    $('#hSave', el).onclick = async () => {
+      const g = (id) => ($(id, el).value || '').trim();
+      const rec = { name: H.name, weekdays: H.weekdays || [], hdays: H.hdaysText || '', time: g('#hTH') ? g('#hTH') + ':' + g('#hTM') : '', owner: g('#hOw'), phone: g('#hPh'), notes: g('#hNt'), rules: H.rulesText || '', address: g('#hAd'), map: g('#hMp'), more: H.more || [], type: H.type || 'حسينية' };
+      const base = ((SNAP && SNAP.parts && SNAP.parts.hus) || []).find((x) => x.name === H.name) || H;
+      await queue({ fn: 'Hus_save', args: [rec], guard: { hus: H.name, h: husHash(base) }, label: '📇 تعديل الدليل: ' + H.name, desc: [rec.owner && '👤 ' + rec.owner, rec.phone && '📞 ' + rec.phone, rec.time && '⏰ ' + rec.time].filter(Boolean).join(' · ') });
+      history.back(); setTimeout(() => { $$('.sheet').forEach((x) => x._close()); openHusRep(H.name); }, 120);
+    };
+  }
   // 📅 الشهر: ميلادي أو هجري (بتقويم البرنامج)، والسابق/التالي
   function monRepHtml() {
     const cal = SUB.cal || 'h', off = SUB.mon || 0, now = new Date();
@@ -576,16 +609,26 @@
     'يعمل والتطبيق مفتوح أو في الخلفية. وعلى الأندرويد بعد تثبيته يفحص أيضاً وهو مغلق كل فترة (يحددها الجوال) — فقد يتأخر قليلاً.';
   async function remindPlan() {
     if (!DB) return;
-    const R0 = CFG.rem || {}, min = R0.min || 60, now = Date.now(), list = [];
+    const R0 = CFG.rem || {}, min = R0.min || 60, list = [];
+    const now = Date.now();
     if (R0.on) MAJ.forEach((m) => {
       if (m.status === 'ملغى' || !m.time) return; const d = parseIso(m.iso), t = /^(\d{1,2}):(\d{2})/.exec(m.time); if (!d || !t) return;
       const at = new Date(d.getFullYear(), d.getMonth(), d.getDate(), +t[1], +t[2]).getTime(); if (at < now - 3600000 || at > now + 3 * 864e5) return;
       list.push({ id: m.id + '@' + m.iso + m.time + '@' + min, when: at - min * 60000, at, title: (isPriv(m) ? '🕯️ ' : '🕌 ') + m.husseiniya + ' — ' + m.time, body: [isPriv(m) ? privTitle(m) : '', majItems(m).map((x) => x.icon + ' ' + x.t).join(' · '), m.owner ? '👤 ' + m.owner : ''].filter(Boolean).join('\n') || 'مجلس بعد ' + (min < 60 ? min + ' دقيقة' : (min / 60) + ' ساعة') });
     });
-    try { await kvSet('remind', { on: !!R0.on, list }); } catch (e) {}
+    // 🌙 ملخص الغد: مرة كل مساء بمجالس الغد، وتنبيه على ما ليس فيه فقرة
+    if (R0.eve) for (let k = 0; k < 2; k++) {
+      const d0 = new Date(), day = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + k), tmr = isoOf(new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1)), [eh, em] = R0.eve.split(':').map(Number);
+      const when = new Date(day.getFullYear(), day.getMonth(), day.getDate(), eh, em).getTime(), L = MAJ.filter((m) => m.iso === tmr && m.status !== 'ملغى').sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+      if (!L.length || when < now - 4 * 3600000) continue;
+      const empty = L.filter((m) => !majItems(m).length).length;
+      list.push({ id: 'eve@' + tmr + '@' + R0.eve + '@' + L.length, when, at: when + 3 * 3600000, title: '🌙 غداً ' + dayCell(tmr).split(' ')[0] + ': ' + (L.length === 1 ? 'مجلس واحد' : L.length === 2 ? 'مجلسان' : L.length + ' مجالس') + (empty ? ' — ⚠️ ' + empty + ' بلا فقرة' : ''),
+        body: L.map((m) => (m.time || '—') + ' ' + m.husseiniya + ' — ' + (majItems(m).map((x) => x.t).join('، ') || '⚠️ بلا فقرة')).join('\n') });
+    }
+    try { await kvSet('remind', { on: !!(R0.on || R0.eve), list }); } catch (e) {}
   }
   async function remindTick() {
-    if (!DB || !(CFG.rem && CFG.rem.on) || !('Notification' in window) || Notification.permission !== 'granted') return;
+    if (!DB || !(CFG.rem && (CFG.rem.on || CFG.rem.eve)) || !('Notification' in window) || Notification.permission !== 'granted') return;
     const P = await kvGet('remind') || { list: [] }, seen = await kvGet('notified') || {}, now = Date.now();
     for (const x of P.list || []) { if (seen[x.id] || now < x.when || now > x.at + 1800000) continue; seen[x.id] = now; await notify(x.title, x.body, x.id); }
     Object.keys(seen).forEach((k) => { if (now - seen[k] > 7 * 864e5) delete seen[k]; }); await kvSet('notified', seen);
@@ -730,7 +773,7 @@
       const nt = e.target.closest('[data-fxnote]'); if (nt) { const i1 = $('[data-fn="' + nt.getAttribute('data-fxnote') + '"]', el); i1.classList.toggle('hidden'); if (!i1.classList.contains('hidden')) i1.focus(); }
     });
     // 🕌 اختيار الحسينية من الدليل يملأ مسؤولها ووقتها (للمجلس العام)
-    el.addEventListener('change', (e) => { if (e.target.id !== 'fHus' || priv) return; const H = ((SNAP && SNAP.parts && SNAP.parts.hus) || []).find((x) => x.name === e.target.value.trim()); if (!H) return; const o = $('#fOwner', el); if (H.owner && (!o.value || o.dataset.auto)) { o.value = H.owner; o.dataset.auto = '1'; } const t = /^(\d{1,2}):(\d{2})/.exec(H.time || ''); if (t && !$('#fTH', el).value) { $('#fTH', el).value = pad(+t[1]); const mm = $('#fTM', el); if (![...mm.options].some((op) => op.value === t[2])) mm.add(new Option(t[2])); mm.value = t[2]; } });
+    el.addEventListener('change', (e) => { if (e.target.id !== 'fHus' || priv) return; const H = HUSL.find((x) => x.name === e.target.value.trim()); if (!H) return; const o = $('#fOwner', el); if (H.owner && (!o.value || o.dataset.auto)) { o.value = H.owner; o.dataset.auto = '1'; } const t = /^(\d{1,2}):(\d{2})/.exec(H.time || ''); if (t && !$('#fTH', el).value) { $('#fTH', el).value = pad(+t[1]); const mm = $('#fTM', el); if (![...mm.options].some((op) => op.value === t[2])) mm.add(new Option(t[2])); mm.value = t[2]; } });
     el.addEventListener('input', (e) => { if (e.target.id === 'fOwner') delete e.target.dataset.auto; });
     const dH = () => { const v = $('#fDate', el).value; $('#fDateH', el).textContent = v ? dayCell(v) + ' · ' + hijriOf(v) : ''; }; $('#fDate', el).addEventListener('input', dH); $('#fDate', el).addEventListener('change', dH); dH();
     el.addEventListener('change', (e) => { if (e.target.id === 'fFam' && priv) { const h = (B.famHints || {})[famNames(e.target.value)[0]]; if (h) { if (!$('#fOwner', el).value && h.owner) $('#fOwner', el).value = h.owner; if (!$('#fPhone', el).value && h.ophone) $('#fPhone', el).value = h.ophone; if (!$('#fFamNote', el).value && h.famnote) $('#fFamNote', el).value = h.famnote; if (!$('#fHus', el).value && h.place) $('#fHus', el).value = h.place; } } });
@@ -792,6 +835,7 @@
       const old = OPS.find((o) => o.fn === 'Daily_done' && o.args[0] === iso && o.args[1] === check && o.st === 'pending'); if (old) await opDel(old.id);
       await queue({ fn: 'Daily_done', args: [iso, check, on], label: (on ? '✔️ تمّ: ' : '↩️ لم يتمّ: ') + ((d1 && (d1.title || d1.category)) || 'عمل') + ' — ' + iso, quiet: true }); return; }
     const ri = t.closest('[data-rinv]'); if (ri) { openInv(ri.getAttribute('data-rinv')); return; }
+    const hed = t.closest('[data-hused]'); if (hed) { husForm(hed.getAttribute('data-hused')); return; }
     const hr = t.closest('[data-husr]'); if (hr) { openHusRep(hr.getAttribute('data-husr')); return; }
     const rm = t.closest('[data-rmode]'); if (rm) { go('rep', { mode: rm.getAttribute('data-rmode') }); return; }
     const rmo = t.closest('[data-rmon]'); if (rmo) { SUB.mon = +rmo.getAttribute('data-rmon'); SUB.keepY = true; render(); return; }
@@ -838,6 +882,8 @@
     CFG = await kvGet('cfg') || {}; CFG.dev = CFG.dev || uid();
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});   // لا يمسحه المتصفح عند امتلاء المساحة
+    let rvk = ''; try { rvk = sessionStorage.getItem('offRevoked'); sessionStorage.removeItem('offRevoked'); } catch (e) {}
+    if (rvk) { setupScreen('⛔ أُوقف هذا الجهاز من البرنامج، ومُسحت بيانات التطبيق منه. إن كان جهازك فادخل من جديد بكلمة المرور.'); return; }
     if (!CFG.exec || !CFG.tok && CFG.tok !== '' || CFG.tok == null) { setupScreen(); return; }
     if (!CFG.pin) { pinScreen('set', () => boot(true)); return; }
     pinScreen('enter', () => boot(false));
