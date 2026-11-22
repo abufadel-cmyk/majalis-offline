@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const APP_VER = '1.2';
+  const APP_VER = '1.3';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -106,7 +106,12 @@
       else if (o.lec) { const l = LEC.find((x) => x.title === o.lec.title) || LEC.find((x) => x.row === o.lec.row); if (l) { if (o.lec.rating != null) l.rate = o.lec.rating; if (o.lec.notes != null) l.notes = o.lec.notes; l._pend = o.id; } }
     });
     MAJ.sort((a, b) => (a.iso + a.time).localeCompare(b.iso + b.time));
+    // ✔️ «تمّ» في الأعمال: ما في الطابور يغلب ما في اللقطة
+    DONE = {}; OPS.forEach((o) => { if (o.fn === 'Daily_done' && o.st !== 'done') DONE[o.args[0] + '|' + o.args[1]] = !!o.args[2]; });
+    remindPlan();
   }
+  let DONE = {};
+  const isDone = (iso, x) => { const k = iso + '|' + x.check; return k in DONE ? DONE[k] : !!x.done; };
   // كل قراءات فقرة: من سجل المجالس (المحاضرة وكل خانة)
   const readsOf = (title) => { const k = nz(title); return MAJ.filter((m) => m.status !== 'ملغى' && majItems(m).some((x) => nz(x.t) === k)); };
 
@@ -241,7 +246,7 @@
   function shell(title, inner) {
     return '<div class="top"><h1>' + title + '</h1><button class="chip" id="syncChip" title="مزامنة">' + chipHtml() + '</button></div>' +
       '<div class="wrap"><div id="syncBox">' + syncBoxHtml() + '</div>' + inner + '</div>' +
-      '<nav class="nav">' + TABS.map((t) => '<button data-tab="' + t[0] + '" class="' + (VIEW === t[0] || (t[0] === 'more' && ['fam', 'hus', 'daily', 'occ', 'queue', 'set'].includes(VIEW)) ? 'on' : '') + '"><span class="i">' + t[1] + '</span>' + t[2] + '</button>').join('') + '</nav>';
+      '<nav class="nav">' + TABS.map((t) => '<button data-tab="' + t[0] + '" class="' + (VIEW === t[0] || (t[0] === 'more' && ['fam', 'hus', 'daily', 'occ', 'queue', 'set', 'rep'].includes(VIEW)) ? 'on' : '') + '"><span class="i">' + t[1] + '</span>' + t[2] + '</button>').join('') + '</nav>';
   }
   function render() {
     if (!UNLOCKED) return;
@@ -307,8 +312,19 @@
     more() {
       const n = OPS.filter((o) => o.st !== 'done').length;
       const it = (v, i, t, d) => '<div class="item" data-go="' + v + '"><div class="t">' + i + ' ' + t + '</div><div class="mut sm">' + d + '</div></div>';
-      return ['☰ المزيد', '<div class="card">' + it('fam', '👪', 'العوائل', 'ماذا قرأت لكل عائلة') + it('hus', '📇', 'دليل الحسينيات والمساجد', 'الأماكن وأصحابها وهواتفهم') + it('daily', '🕌', 'الأعمال', 'أعمال اليوم والأيام القادمة') + it('occ', '📆', 'المناسبات', 'مناسبات كل شهر بالهجري والميلادي') +
+      return ['☰ المزيد', '<div class="card">' + it('fam', '👪', 'العوائل', 'ماذا قرأت لكل عائلة') + it('hus', '📇', 'دليل الحسينيات والمساجد', 'الأماكن وأصحابها وهواتفهم') + it('rep', '📊', 'التقارير', 'حسينية، شهر، الفقرات الأكثر قراءة') + it('daily', '🕌', 'الأعمال', 'أعمال اليوم والليلة، ✔️ تمّ، ورسالتها') + it('occ', '📆', 'المناسبات', 'مناسبات كل شهر بالهجري والميلادي') +
         it('queue', '⏳', 'بانتظار الرفع' + (n ? ' (' + n + ')' : ''), 'ما أدخلته بلا إنترنت') + it('set', '⚙️', 'الإعدادات', 'المزامنة، الرمز، الجهاز') + '</div>'];
+    },
+    rep() {
+      const mode = SUB.mode || 'hus';
+      let h = '<div class="seg">' + [['hus', '🕌 حسينية'], ['mon', '📅 الشهر'], ['lec', '📚 الفقرات']].map((x) => '<button data-rmode="' + x[0] + '" class="' + (mode === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>';
+      if (mode === 'hus') {
+        const names = Array.from(new Set(MAJ.map((m) => m.husseiniya).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ar'));
+        h += '<div class="card"><select class="in" id="rh"><option value="">— اختر الحسينية / المكان —</option>' + names.map((n) => '<option' + (SUB.h === n ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select></div>';
+        h += SUB.h ? husRepHtml(SUB.h) : '<div class="card mut sm">اختر مكاناً لترى: كم قرأت فيه، وماذا قرأت ومتى، والقادم.</div>';
+      } else if (mode === 'mon') h += monRepHtml();
+      else h += lecRepHtml();
+      return ['📊 التقارير', h];
     },
     fam() { return ['👪 العوائل', '<div class="row" style="margin-bottom:8px"><input class="in" id="fq" type="search" placeholder="🔎 العائلة، ملاحظتها، المرحوم، المسؤول أو هاتفه…" value="' + esc(SUB.q || '') + '"></div>' + famListHtml()]; },
     hus() {
@@ -319,7 +335,9 @@
     daily() {
       const D = ((SNAP && SNAP.parts && SNAP.parts.daily) || []), i = SUB.i || 0, d = D[i];
       let h = '<div class="seg">' + D.map((x, k) => '<button data-dday="' + k + '" class="' + (k === i ? 'on' : '') + '">' + esc(k === 0 ? 'اليوم' : k === 1 ? 'غداً' : x.weekday) + ' ' + esc(String(x.hday || '')) + '</button>').join('') + '</div>';
-      h += d ? '<div class="card"><div class="b">' + esc(d.weekday + ' ' + d.hijri + ' — ' + d.gregText) + '</div>' + dailyHtml(d, false) + '</div>' : '<div class="card mut">لا أعمال محفوظة — زامن وأنت على الإنترنت.</div>';
+      const night = SUB.n && d && d.night;
+      if (d) h += '<div class="seg"><button data-dper="d" class="' + (night ? '' : 'on') + '">☀️ النهار</button>' + (d.night ? '<button data-dper="n" class="' + (night ? 'on' : '') + '">🌙 ' + esc(d.night.title || 'الليلة') + '</button>' : '') + '</div>';
+      h += d ? '<div class="card"><div class="row"><span class="grow b">' + esc(night ? d.night.title : d.weekday + ' ' + d.hijri + ' — ' + d.gregText) + '</span><button class="btn s" data-dmsg="' + i + '|' + (night ? 'n' : 'd') + '">📤 الرسالة</button></div>' + dailyHtml(night ? Object.assign({ iso: d.night.iso }, d.night) : d, false) + '</div>' : '<div class="card mut">لا أعمال محفوظة — زامن وأنت على الإنترنت.</div>';
       return ['🕌 الأعمال', h];
     },
     occ() {
@@ -348,6 +366,8 @@
       let h = '<div class="card"><div class="kv"><span class="k">المستخدم</span><span>' + esc((CFG.user && CFG.user.name) || '—') + '</span><span class="k">الجهاز</span><span>' + esc(CFG.devName || '') + '</span><span class="k">آخر مزامنة</span><span>' + esc(fmtAt(CFG.lastSync)) + '</span>' +
         '<span class="k">الفقرات</span><span>' + LEC.length + '</span><span class="k">المجالس</span><span>' + MAJ.length + '</span><span class="k">النصوص</span><span id="txtN">…</span><span class="k">الإصدار</span><span>' + APP_VER + '</span></div>' +
         '<div class="row" style="margin-top:10px"><button class="btn" data-sync="1">🔄 زامن الآن</button><button class="btn o" data-sync="full">📄 أعد تنزيل النصوص كلها</button></div></div>' +
+        '<div class="card"><div class="b">🔔 تذكير بالمجالس</div><label class="row sm" style="margin-top:6px"><input type="checkbox" id="remOn"' + (CFG.rem && CFG.rem.on ? ' checked' : '') + '> ذكّرني قبل كل مجلس بـ <select class="in" id="remMin" style="width:auto">' + [15, 30, 60, 90, 120, 180].map((n) => '<option value="' + n + '"' + (((CFG.rem && CFG.rem.min) || 60) === n ? ' selected' : '') + '>' + (n < 60 ? n + ' دقيقة' : n === 60 ? 'ساعة' : n === 120 ? 'ساعتين' : (n / 60) + ' ساعات') + '</option>').join('') + '</select></label>' +
+          '<div class="mut xs" style="margin-top:4px">' + remindNote() + '</div><div class="row" style="margin-top:6px"><button class="btn s o" id="remTest">🔔 جرّب إشعاراً الآن</button></div></div>' +
         '<div class="card"><div class="row"><button class="btn o" id="setPin">🔐 غيّر رمز PIN</button><button class="btn o" id="setLogin">👤 دخول من جديد</button><button class="btn o" id="setLock">🔒 اقفل الآن</button></div></div>' +
         '<div class="card"><div class="b">رابط البرنامج</div><div class="xs mut" dir="ltr" style="word-break:break-all">' + esc(CFG.exec) + '</div><button class="btn s o" id="setExec" style="margin-top:6px">✏️ غيّره</button></div>' +
         '<div class="card"><button class="btn bad" id="setWipe">🗑️ امسح بيانات التطبيق من هذا الجهاز</button><div class="mut xs" style="margin-top:6px">لا يمس برنامجك. ما لم يُرفع من الطابور يُفقد.</div></div>';
@@ -362,7 +382,8 @@
     (d.groups || []).forEach((g) => {
       const its = (g.items || []).filter((x) => !short || x.home || x.inMsg);
       if (!its.length) return;
-      h += '<div class="b sm" style="margin-top:8px">' + esc(g.title) + '</div>' + its.slice(0, short ? 6 : 999).map((x) => '<div class="item"><div>' + esc(x.text || x.title) + '</div>' + (!short && x.notes ? '<div class="mut xs">' + esc(x.notes) + '</div>' : '') + (x.moonWarn ? '<div class="alert w">' + esc(x.moonWarn) + '</div>' : '') + '</div>').join('');
+      h += '<div class="b sm" style="margin-top:8px">' + esc(g.title) + '</div>' + its.slice(0, short ? 6 : 999).map((x) => { const dn = x.check && isDone(d.iso, x);
+        return '<div class="item act' + (dn ? ' done' : '') + '" style="cursor:default"><div class="row" style="flex-wrap:nowrap;align-items:flex-start">' + (x.check ? '<button class="btn s ' + (dn ? '' : 'o') + '" data-adone="' + esc(d.iso + '|' + x.check) + '" title="' + (dn ? 'أنجزته — اضغط للإلغاء' : 'علّمه: تمّ') + '" style="flex:none;padding:2px 8px">' + (dn ? '✔️ تمّ' : '✔️') + '</button>' : '') + '<div class="grow"><div class="at">' + esc(x.text || x.title) + '</div>' + (!short && x.notes ? '<div class="mut xs">' + esc(x.notes) + '</div>' : '') + (x.moonWarn ? '<div class="alert w">' + esc(x.moonWarn) + '</div>' : '') + '</div></div></div>'; }).join('');
     });
     return h || '<div class="mut sm">لا أعمال.</div>';
   }
@@ -434,12 +455,13 @@
       const draw = () => { SUB.q = $('#hq').value; const ws = words(SUB.q), qd = AR_DIG(SUB.q).replace(/\D/g, ''); const L = ((SNAP && SNAP.parts && SNAP.parts.hus) || []).filter((x) => (!SUB.t || (x.type || 'حسينية') === SUB.t) && (!ws.length || (qd.length >= 4 && JSON.stringify(x.phones || []).replace(/\D/g, '').includes(qd)) || hasAll(nz([x.name, x.area, x.owner, x.notes, (x.more || []).map((c) => c.name).join(' ')].join(' ')), ws))); $('#hlist').innerHTML = L.map(husRow).join('') || '<div class="mut">لا نتائج.</div>'; };
       let tm; $('#hq').oninput = () => { clearTimeout(tm); tm = setTimeout(draw, 250); }; draw();
     },
-    set() { txtCount().then((n) => { const e = $('#txtN'); if (e) e.textContent = n + ' جزء'; }); },
+    set() { txtCount().then((n) => { const e = $('#txtN'); if (e) e.textContent = n + ' جزء'; }); const mn = $('#remMin'); if (mn) mn.onchange = async () => { CFG.rem = Object.assign({}, CFG.rem, { min: +mn.value }); await kvSet('cfg', CFG); remindPlan(); toast('✓ حُفظ'); }; },
+    rep() { const hs0 = $('#rh'); if (hs0) hs0.onchange = () => { SUB.h = hs0.value; render(); }; const i = $('#rq'); if (!i) return; let tm; i.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { SUB.q = i.value; const v1 = i.value; render(); const j = $('#rq'); if (j) { j.focus(); j.setSelectionRange(v1.length, v1.length); } }, 350); }; const hs = $('#rh'); if (hs) hs.onchange = () => { SUB.h = hs.value; render(); }; },
   };
   function husRow(x) {
     const mine = MAJ.filter((m) => m.husseiniya === x.name && m.status !== 'ملغى'), last = mine.filter((m) => m.iso <= isoOf(new Date())).pop();
     const ph = (x.phones && x.phones.length ? x.phones : x.phone ? [{ phone: x.phone, wa: x.wa }] : []);
-    return '<div class="item"><div class="t">' + (x.type && x.type !== 'حسينية' ? '<span class="tag">' + esc(x.type) + '</span> ' : '') + esc(x.name) + '</div><div class="sm">' + (x.owner ? '👤 ' + esc(x.owner) + ' ' : '') + ph.map((p) => '<a href="tel:' + esc(p.phone) + '" dir="ltr">📞 ' + esc(p.phone) + '</a>' + (p.wa ? ' <a href="https://wa.me/' + esc(p.wa) + '" target="_blank">💬</a>' : '')).join(' · ') + '</div>' +
+    return '<div class="item" data-husr="' + esc(x.name) + '"><div class="t">' + (x.type && x.type !== 'حسينية' ? '<span class="tag">' + esc(x.type) + '</span> ' : '') + esc(x.name) + '</div><div class="sm">' + (x.owner ? '👤 ' + esc(x.owner) + ' ' : '') + ph.map((p) => '<a href="tel:' + esc(p.phone) + '" dir="ltr">📞 ' + esc(p.phone) + '</a>' + (p.wa ? ' <a href="https://wa.me/' + esc(p.wa) + '" target="_blank">💬</a>' : '')).join(' · ') + '</div>' +
       (x.addressText ? '<div class="mut xs">📍 ' + esc(x.addressText) + '</div>' : '') + (x.weekdaysText || x.hdaysText ? '<div class="mut xs">📆 ' + esc([x.weekdaysText, x.hdaysText, x.time].filter(Boolean).join(' · ')) + '</div>' : '') + '<div class="mut xs">قراءاتي: ' + mine.length + (last ? ' · آخرها ' + esc(last.iso.replace(/-/g, '/')) : '') + '</div></div>';
   }
   async function searchTexts(ws, box) {
@@ -457,6 +479,134 @@
   }
   const HLC = { 'ا': '[اأإآٱ]', 'ه': '[هة]', 'ي': '[يىئی]', 'و': '[وؤ]', 'ك': '[كک]', 'ج': '[جچ]' };
   function hlWords(s, ws) { let t = esc(s); ws.forEach((w) => { if (w.length < 2) return; try { t = t.replace(new RegExp('(' + w.split('').map((c) => (HLC[c] || c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) + '[\\u064B-\\u065F\\u0640]*').join('') + ')', 'g'), '<span class="hl">$1</span>'); } catch (e) {} }); return t; }
+
+  // ---------------- 📊 التقارير (من بيانات الجهاز) ----------------
+  let REP_TXT = '';
+  const copyText = (t) => (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('📋 نُسخ'), () => prompt('انسخ:', t));
+  const stIcon = (s) => s === 'تمّ' ? '✔️' : s === 'ملغى' ? '🚫' : '⏳';
+  function husRepData(name) {
+    const today = isoOf(new Date()), L = MAJ.filter((m) => m.husseiniya === name), act = L.filter((m) => m.status !== 'ملغى');
+    const done = act.filter((m) => m.iso <= today), up = act.filter((m) => m.iso > today), T = {};
+    done.forEach((m) => majItems(m).forEach((x) => { const k = nz(x.t); (T[k] = T[k] || { t: x.t, icon: x.icon, w: [] }).w.push(m.iso); }));
+    return { L, act, done, up, cancel: L.length - act.length, titles: Object.values(T).sort((a, b) => b.w.length - a.w.length || a.t.localeCompare(b.t, 'ar')) };
+  }
+  function husRepHtml(name) {
+    const D = husRepData(name), H = ((SNAP && SNAP.parts && SNAP.parts.hus) || []).find((x) => x.name === name);
+    REP_TXT = ['📊 ' + name, 'المجالس: ' + D.act.length + ' (قُرئ ' + D.done.length + '، قادم ' + D.up.length + (D.cancel ? '، ملغى ' + D.cancel : '') + ')', D.done.length ? 'أول مجلس: ' + D.done[0].iso.replace(/-/g, '/') + ' · آخر مجلس: ' + D.done[D.done.length - 1].iso.replace(/-/g, '/') : '', '',
+      '📚 ما قرأته فيه:', ...D.titles.map((t) => '• ' + t.icon + ' ' + t.t + ' — ' + t.w.map((x) => x.replace(/-/g, '/')).join('، ')), '', D.up.length ? '⏭ القادم:' : '', ...D.up.map((m) => '• ' + dayCell(m.iso) + ' ' + (m.time || '') + (majItems(m).length ? ' — ' + majItems(m).map((x) => x.t).join('، ') : ''))].filter((x, i, a) => x !== '' || a[i - 1] !== '').join('\n');
+    return '<div class="card"><div class="row"><span class="grow t">' + esc(name) + '</span><button class="btn s" data-rcopy="1">📋 انسخ</button><button class="btn s o" data-rinv="' + esc(name) + '">📨 رسالة الاتفاق</button></div>' + (H && H.owner ? '<div class="mut sm">👤 ' + esc(H.owner) + (H.phone ? ' · <a href="tel:' + esc(H.phone) + '" dir="ltr">' + esc(H.phone) + '</a>' : '') + '</div>' : '') +
+      '<div class="kv" style="margin-top:6px"><span class="k">المجالس</span><span><b>' + D.act.length + '</b> (✔️ ' + D.done.length + ' · ⏭ ' + D.up.length + (D.cancel ? ' · 🚫 ' + D.cancel : '') + ')</span>' + (D.done.length ? '<span class="k">أول/آخر</span><span>' + esc(D.done[0].iso.replace(/-/g, '/') + ' ← ' + D.done[D.done.length - 1].iso.replace(/-/g, '/')) + '</span>' : '') + '<span class="k">فقرات مختلفة</span><span>' + D.titles.length + '</span></div></div>' +
+      (D.up.length ? '<div class="card"><div class="b">⏭ القادم (' + D.up.length + ')</div>' + D.up.map(majRow).join('') + '</div>' : '') +
+      '<div class="card"><div class="b">📚 ما قرأته فيه (' + D.titles.length + ')</div>' + (D.titles.map((t) => { const l = LEC.find((y) => nz(y.title) === nz(t.t)); return '<div class="item"' + (l ? ' data-lec="' + l.row + '"' : '') + '>' + esc(t.icon + ' ' + t.t) + (t.w.length > 1 ? ' <span class="tag">' + t.w.length + '×</span>' : '') + '<div class="mut xs">' + esc(t.w.map((x) => x.replace(/-/g, '/')).join(' · ')) + '</div></div>'; }).join('') || '<div class="mut sm">لا قراءات بعد.</div>') + '</div>' +
+      '<div class="card"><div class="b">🗂️ كل مجالسه (' + D.L.length + ')</div>' + D.L.slice().reverse().slice(0, 200).map(majRow).join('') + '</div>';
+  }
+  function openHusRep(name) { const el = sheet('📊 ' + esc(name), husRepHtml(name)); el.addEventListener('click', (e) => { const mj = e.target.closest('[data-maj]'); if (mj) openMaj(mj.getAttribute('data-maj')); const lc = e.target.closest('[data-lec]'); if (lc) openLec(lc.getAttribute('data-lec')); if (e.target.closest('[data-rcopy]')) copyText(REP_TXT); const iv = e.target.closest('[data-rinv]'); if (iv) openInv(iv.getAttribute('data-rinv')); }); }
+  // 📅 الشهر: ميلادي أو هجري (بتقويم البرنامج)، والسابق/التالي
+  function monRepHtml() {
+    const cal = SUB.cal || 'h', off = SUB.mon || 0, now = new Date();
+    let from, to, title;
+    if (cal === 'g') { const a = new Date(now.getFullYear(), now.getMonth() + off, 1), b = new Date(a.getFullYear(), a.getMonth() + 1, 0); from = isoOf(a); to = isoOf(b); title = new Intl.DateTimeFormat('ar', { month: 'long', year: 'numeric' }).format(a); }
+    else {
+      const H = (HIJ && HIJ.days) || {}, t0 = H[isoOf(now)]; if (!t0) return '<div class="card mut">التقويم الهجري غير محفوظ — زامن أولاً.</div>';
+      let mo = t0[1] + off, yr = t0[2]; while (mo < 1) { mo += 12; yr--; } while (mo > 12) { mo -= 12; yr++; }
+      const ds = Object.keys(H).filter((k) => H[k][1] === mo && H[k][2] === yr).sort(); if (!ds.length) return '<div class="card mut">هذا الشهر خارج التقويم المحفوظ.</div>';
+      from = ds[0]; to = ds[ds.length - 1]; title = ((HIJ.months || [])[mo - 1] || mo) + ' ' + yr + 'هـ';
+    }
+    const L = MAJ.filter((m) => m.iso >= from && m.iso <= to), act = L.filter((m) => m.status !== 'ملغى'), byH = {}, T = {};
+    act.forEach((m) => { byH[m.husseiniya] = (byH[m.husseiniya] || 0) + 1; majItems(m).forEach((x) => { const k = nz(x.t); (T[k] = T[k] || { t: x.t, icon: x.icon, n: 0 }).n++; }); });
+    const hs = Object.keys(byH).sort((a, b) => byH[b] - byH[a]), ts = Object.values(T).sort((a, b) => b.n - a.n), cnt = (s) => L.filter((m) => m.status === s).length;
+    REP_TXT = ['📅 ' + title + ' (' + from.replace(/-/g, '/') + ' – ' + to.replace(/-/g, '/') + ')', 'المجالس: ' + act.length + ' — ✔️ تمّ ' + cnt('تمّ') + ' · ⏳ مجدول ' + cnt('مجدول') + (cnt('ملغى') ? ' · 🚫 ملغى ' + cnt('ملغى') : '') + ' · 🕯️ خاصة ' + act.filter(isPriv).length, '', '🕌 حسب المكان:', ...hs.map((x) => '• ' + x + ': ' + byH[x]), '', '📚 الفقرات:', ...ts.map((x) => '• ' + x.icon + ' ' + x.t + (x.n > 1 ? ' (' + x.n + ')' : ''))].join('\n');
+    return '<div class="card"><div class="row"><button class="btn s o" data-rmon="' + (off - 1) + '">→</button><span class="grow b" style="text-align:center">' + esc(title) + '<div class="mut xs">' + esc('من ' + from.replace(/-/g, '/') + ' إلى ' + to.replace(/-/g, '/')) + '</div></span><button class="btn s o" data-rmon="' + (off + 1) + '">←</button></div>' +
+      '<div class="seg" style="margin:8px 0 0"><button data-rcal="h" class="' + (cal === 'h' ? 'on' : '') + '">هجري</button><button data-rcal="g" class="' + (cal === 'g' ? 'on' : '') + '">ميلادي</button><button data-rcopy="1">📋 انسخ</button></div></div>' +
+      '<div class="card"><div class="kv"><span class="k">المجالس</span><span><b>' + act.length + '</b></span><span class="k">✔️ تمّ</span><span>' + cnt('تمّ') + '</span><span class="k">⏳ مجدول</span><span>' + cnt('مجدول') + '</span><span class="k">🚫 ملغى</span><span>' + cnt('ملغى') + '</span><span class="k">🕯️ خاصة</span><span>' + act.filter(isPriv).length + '</span><span class="k">أماكن</span><span>' + hs.length + '</span></div></div>' +
+      '<div class="card"><div class="b">🕌 حسب المكان</div>' + (hs.map((x) => '<div class="item row" data-husr="' + esc(x) + '"><span class="grow">' + esc(x) + '</span><span class="tag">' + byH[x] + '</span></div>').join('') || '<div class="mut sm">لا مجالس.</div>') + '</div>' +
+      '<div class="card"><div class="b">📚 الفقرات (' + ts.length + ')</div>' + ts.map((x) => '<div class="sm">' + esc(x.icon + ' ' + x.t) + (x.n > 1 ? ' <span class="tag">' + x.n + '×</span>' : '') + '</div>').join('') + '</div>' +
+      '<div class="card"><div class="b">🗂️ المجالس</div>' + L.map(majRow).join('') + '</div>';
+  }
+  // 📚 الأكثر قراءة، وما لم يُقرأ (حسب المجلد)
+  function lecRepHtml() {
+    const C = {}; MAJ.forEach((m) => { if (m.status === 'ملغى') return; majItems(m).forEach((x) => { const k = nz(x.t); C[k] = C[k] || { n: 0, last: '' }; C[k].n++; if (m.iso > C[k].last && m.iso <= isoOf(new Date())) C[k].last = m.iso; }); });
+    const ws = words(SUB.q || ''), F = Array.from(new Set(LEC.map((l) => l.folder).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ar', { numeric: true }));
+    const L = LEC.filter((l) => (!SUB.f || l.folder === SUB.f) && (!ws.length || hasAll(nz([l.title, l.tags.join(' '), l.folder].join(' ')), ws))).map((l) => Object.assign({ c: C[nz(l.title)] || { n: 0, last: '' } }, { l }));
+    const top = L.filter((x) => x.c.n).sort((a, b) => b.c.n - a.c.n).slice(0, 40), never = L.filter((x) => !x.c.n);
+    REP_TXT = ['📚 الأكثر قراءة' + (SUB.f ? ' — ' + SUB.f : ''), ...top.map((x) => '• ' + x.l.title + ' — ' + x.c.n + ' مرة' + (x.c.last ? ' (آخرها ' + x.c.last.replace(/-/g, '/') + ')' : '')), '', '🆕 لم تُقرأ بعد: ' + never.length].join('\n');
+    return '<div class="card"><input class="in" id="rq" type="search" placeholder="🔎 العنوان، الوسم، المجلد…" value="' + esc(SUB.q || '') + '"><div class="row" style="margin-top:6px"><select class="in" id="rf" style="flex:1" onchange="__offApp.go(\'rep\', { mode: \'lec\', f: this.value, q: document.getElementById(\'rq\').value })"><option value="">📁 كل المجلدات</option>' + F.map((f) => '<option' + (SUB.f === f ? ' selected' : '') + '>' + esc(f) + '</option>').join('') + '</select><button class="btn s" data-rcopy="1">📋 انسخ</button></div></div>' +
+      '<div class="card"><div class="b">🔝 الأكثر قراءة</div>' + (top.map((x) => '<div class="item row" data-lec="' + x.l.row + '"><span class="grow">' + esc(x.l.title) + '<div class="mut xs">📁 ' + esc(x.l.folder) + (x.c.last ? ' · آخرها ' + esc(x.c.last.replace(/-/g, '/')) : '') + '</div></span><span class="tag">' + x.c.n + '×</span></div>').join('') || '<div class="mut sm">لا شيء.</div>') + '</div>' +
+      '<div class="card"><details><summary class="b">🆕 لم تُقرأ بعد (' + never.length + ')</summary>' + never.slice(0, 300).map((x) => '<div class="item" data-lec="' + x.l.row + '">' + esc(x.l.title) + '<div class="mut xs">📁 ' + esc(x.l.folder) + '</div></div>').join('') + '</details></div>';
+  }
+  // 📨 رسالة الاتفاق: حيّة من البرنامج إن وُجد إنترنت، وإلا من آخر مزامنة
+  function openInv(hus) {
+    const S = ((SNAP && SNAP.parts && SNAP.parts.inv) || {})[hus] || null, B = (SNAP && SNAP.parts && SNAP.parts.boot) || {}, rc = (S && S.recipient) || ((B.hints || {})[hus] || {}).owner || '';
+    const pend = OPS.some((o) => o.st !== 'done' && ((o.args && o.args[0] && o.args[0].husseiniya === hus) || (o.fn === 'Maj_setStatus' && MAJ.some((m) => m.id === String(o.args[0]) && m.husseiniya === hus))));
+    const el = sheet('📨 ' + esc(hus), '<div class="card"><label class="lbl">إلى (المسؤول)</label><div class="row" style="flex-wrap:nowrap"><input class="in" id="ivR" style="flex:1" value="' + esc(rc) + '"><button class="btn s o" id="ivGo" style="flex:none">🔄 أنشئها</button></div><div id="ivInfo" class="mut xs" style="margin-top:4px"></div>' + (pend ? '<div class="alert w">⏳ عندك تعديلات لهذا المكان لم تُرفع — الرسالة لا تشملها حتى تُرفع.</div>' : '') +
+      '<textarea class="in" id="ivT" style="min-height:280px;margin-top:6px"></textarea><div class="row" style="margin-top:6px"><button class="btn" id="ivCp">📋 انسخ</button><select class="in hidden" id="ivWho" style="width:auto"></select><button class="btn o" id="ivWa">💬 واتساب</button>' + (navigator.share ? '<button class="btn o" id="ivSh">↗ مشاركة</button>' : '') + '</div></div>');
+    let contacts = (S && S.contacts) || [];
+    const fill = (text, cs, info) => { $('#ivT', el).value = text || ''; contacts = cs || []; const w = $('#ivWho', el); w.innerHTML = contacts.map((c) => '<option value="' + esc(c.wa) + '">' + esc(c.name || c.phone) + '</option>').join(''); w.classList.toggle('hidden', contacts.length < 2); $('#ivInfo', el).textContent = info || ''; };
+    const live = async () => {
+      if (!online()) { fill(S ? S.text : '', S ? S.contacts : [], S ? '📴 من آخر مزامنة (' + fmtAt(CFG.lastSync) + ')' : '📴 لا رسالة محفوظة لهذا المكان (لا مواعيد قادمة وقت المزامنة).'); return; }
+      $('#ivInfo', el).textContent = '⏳ يُنشئها البرنامج…';
+      try { const r = await api({ api: 'inv', p: { husseiniya: hus, recipient: $('#ivR', el).value.trim(), fromIso: isoOf(new Date()), model: '1' } }, 60000);
+        if (!r.ok) { fill(S ? S.text : '', S ? S.contacts : [], '⚠️ ' + (r.error || 'تعذّر')); return; }
+        fill(r.text, (r.contacts || []).filter((c) => c.wa), '✅ من البرنامج الآن · ' + (r.count || 0) + ' موعد');
+      } catch (e) { fill(S ? S.text : '', S ? S.contacts : [], '⚠️ تعذّر الاتصال — من آخر مزامنة'); }
+    };
+    live();
+    $('#ivGo', el).onclick = live;
+    $('#ivCp', el).onclick = () => copyText($('#ivT', el).value);
+    $('#ivWa', el).onclick = () => { const to = contacts.length > 1 ? $('#ivWho', el).value : (contacts[0] || {}).wa || ''; window.open('https://wa.me/' + String(to).replace(/\D/g, '') + '?text=' + encodeURIComponent($('#ivT', el).value), '_blank'); };
+    const sh = $('#ivSh', el); if (sh) sh.onclick = () => navigator.share({ text: $('#ivT', el).value }).catch(() => {});
+  }
+  // 📤 نص للنسخ والإرسال (رسالة الأعمال)
+  function openText(title, text, note) {
+    const el = sheet(esc(title), '<div class="card">' + (note ? '<div class="mut xs">' + esc(note) + '</div>' : '') + '<textarea class="in" id="txT" style="min-height:340px;margin-top:6px">' + esc(text || '') + '</textarea><div class="row" style="margin-top:6px"><button class="btn" id="txCp">📋 انسخ</button><button class="btn o" id="txWa">💬 واتساب</button>' + (navigator.share ? '<button class="btn o" id="txSh">↗ مشاركة</button>' : '') + '</div></div>');
+    if (!text) $('#txT', el).value = 'لا رسالة محفوظة — زامن وأنت على الإنترنت.';
+    $('#txCp', el).onclick = () => copyText($('#txT', el).value);
+    $('#txWa', el).onclick = () => window.open('https://wa.me/?text=' + encodeURIComponent($('#txT', el).value), '_blank');
+    const sh = $('#txSh', el); if (sh) sh.onclick = () => navigator.share({ text: $('#txT', el).value }).catch(() => {});
+  }
+  // ✔️ عمل بمفتاحه في يوم/ليلة (من اللقطة)
+  function dayActs(iso, check) {
+    for (const d of ((SNAP && SNAP.parts && SNAP.parts.daily) || [])) for (const D of [d, d.night ? Object.assign({ iso: d.night.iso }, d.night) : null]) { if (!D || D.iso !== iso) continue; for (const g of D.groups || []) for (const x of g.items || []) if (x.check === check) return x; }
+    return null;
+  }
+
+  // ---------------- 🔔 التذكير بالمجالس ----------------
+  // الخطة تُحفظ في الجهاز (remind)، والتطبيق المفتوح يفحصها كل 30 ثانية، وعامل الخدمة يفحصها عند «المزامنة الدورية» (أندرويد بعد التثبيت)
+  const remindNote = () => !('Notification' in window) ? '⚠️ هذا المتصفح لا يدعم الإشعارات.' : Notification.permission === 'denied' ? '⚠️ الإشعارات ممنوعة لهذا التطبيق من إعدادات المتصفح/الجوال — اسمح بها ثم فعّل التذكير.' :
+    'يعمل والتطبيق مفتوح أو في الخلفية. وعلى الأندرويد بعد تثبيته يفحص أيضاً وهو مغلق كل فترة (يحددها الجوال) — فقد يتأخر قليلاً.';
+  async function remindPlan() {
+    if (!DB) return;
+    const R0 = CFG.rem || {}, min = R0.min || 60, now = Date.now(), list = [];
+    if (R0.on) MAJ.forEach((m) => {
+      if (m.status === 'ملغى' || !m.time) return; const d = parseIso(m.iso), t = /^(\d{1,2}):(\d{2})/.exec(m.time); if (!d || !t) return;
+      const at = new Date(d.getFullYear(), d.getMonth(), d.getDate(), +t[1], +t[2]).getTime(); if (at < now - 3600000 || at > now + 3 * 864e5) return;
+      list.push({ id: m.id + '@' + m.iso + m.time + '@' + min, when: at - min * 60000, at, title: (isPriv(m) ? '🕯️ ' : '🕌 ') + m.husseiniya + ' — ' + m.time, body: [isPriv(m) ? privTitle(m) : '', majItems(m).map((x) => x.icon + ' ' + x.t).join(' · '), m.owner ? '👤 ' + m.owner : ''].filter(Boolean).join('\n') || 'مجلس بعد ' + (min < 60 ? min + ' دقيقة' : (min / 60) + ' ساعة') });
+    });
+    try { await kvSet('remind', { on: !!R0.on, list }); } catch (e) {}
+  }
+  async function remindTick() {
+    if (!DB || !(CFG.rem && CFG.rem.on) || !('Notification' in window) || Notification.permission !== 'granted') return;
+    const P = await kvGet('remind') || { list: [] }, seen = await kvGet('notified') || {}, now = Date.now();
+    for (const x of P.list || []) { if (seen[x.id] || now < x.when || now > x.at + 1800000) continue; seen[x.id] = now; await notify(x.title, x.body, x.id); }
+    Object.keys(seen).forEach((k) => { if (now - seen[k] > 7 * 864e5) delete seen[k]; }); await kvSet('notified', seen);
+  }
+  async function notify(title, body, tag) {
+    try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) return reg.showNotification(title, { body, tag, icon: 'icon-192.png', badge: 'icon-192.png', dir: 'rtl', lang: 'ar' }); } catch (e) {}
+    try { new Notification(title, { body, tag, icon: 'icon-192.png', dir: 'rtl' }); } catch (e) {}
+  }
+  async function remindSet(on) {
+    if (on && 'Notification' in window && Notification.permission !== 'granted') { const p = await Notification.requestPermission(); if (p !== 'granted') { toast('⚠️ لم تُسمح الإشعارات'); on = false; } }
+    CFG.rem = Object.assign({ min: 60 }, CFG.rem, { on: !!on, min: +(($('#remMin') || {}).value || (CFG.rem && CFG.rem.min) || 60) }); await kvSet('cfg', CFG); await remindPlan();
+    if (on) { try { const reg = await navigator.serviceWorker.ready; if (reg.periodicSync) await reg.periodicSync.register('remind', { minInterval: 15 * 60000 }); } catch (e) {} toast('🔔 التذكير مفعّل'); } else toast('🔕 التذكير متوقف');
+    render();
+  }
+  async function remindTest() {
+    if ('Notification' in window && Notification.permission !== 'granted') await Notification.requestPermission();
+    if (!('Notification' in window) || Notification.permission !== 'granted') return toast('⚠️ الإشعارات غير مسموحة');
+    const up = MAJ.find((m) => m.iso >= isoOf(new Date()) && m.status !== 'ملغى');
+    notify('🔔 تجربة التذكير', up ? 'أقرب مجلس: ' + up.husseiniya + ' — ' + dayCell(up.iso) + ' ' + (up.time || '') : 'لا مجالس قادمة', 'test');
+  }
+  setInterval(() => { if (UNLOCKED) remindTick().catch(() => {}); }, 30000);
 
   // ---------------- 📄 صفحات التفاصيل (فوق الواجهة) ----------------
   function sheet(title, inner, onBack) {
@@ -499,8 +649,8 @@
       '<div class="card">' + (isPriv(m) ? '<div class="ptag" style="margin-bottom:6px">🕯️ ' + esc(privTitle(m)) + '</div>' : '') + '<div class="t">' + esc(m.husseiniya) + '</div><div class="mut sm">' + esc(dayCell(m.iso) + ' · ' + hijriOf(m.iso) + ' · ' + (m.time || '')) + '</div>' +
       '<div class="kv" style="margin-top:6px">' + (m.owner ? '<span class="k">المسؤول</span><span>' + esc(m.owner) + '</span>' : '') + (m.ophone ? '<span class="k">هاتفه</span><span><a href="tel:' + esc(m.ophone) + '" dir="ltr">' + esc(m.ophone) + '</a></span>' : '') + '<span class="k">الحالة</span><span>' + esc(m.status) + '</span>' + (m.notes ? '<span class="k">ملاحظات</span><span>' + esc(m.notes) + '</span>' : '') + '</div>' +
       (m._pend ? '<div class="alert i">⏳ فيه تعديل بانتظار الرفع</div>' : '') + '</div>' +
-      '<div class="card"><div class="b">الفقرات</div>' + (its.length ? its.map((x) => { const l = LEC.find((y) => nz(y.title) === nz(x.t)); return '<div class="item"' + (l ? ' data-lec="' + l.row + '"' : '') + '>' + esc(x.icon + ' ' + x.label + ': ') + '<b>' + esc(x.t) + '</b></div>'; }).join('') : '<div class="mut sm">لا فقرات بعد.</div>') + '</div>' +
-      '<div class="row"><button class="btn" data-medit="' + esc(m.id) + '">✏️ عدّل</button>' + (m.status !== 'تمّ' ? '<button class="btn o" data-mst="تمّ">✔️ تمّ</button>' : '') + (m.status !== 'ملغى' ? '<button class="btn o" data-mst="ملغى">🚫 ألغِ</button>' : '<button class="btn o" data-mst="مجدول">↩️ أعده مجدولاً</button>') + '</div>');
+      '<div class="card"><div class="b">الفقرات</div>' + (its.length ? its.map((x) => { const l = LEC.find((y) => nz(y.title) === nz(x.t)); return '<div class="item"' + (l ? ' data-lec="' + l.row + '"' : '') + '>' + esc(x.icon + ' ' + x.label + ': ') + '<b>' + esc(x.t) + '</b></div>'; }).join('') + Object.keys(m.pnotes || {}).filter((k) => m.pnotes[k]).map((k) => '<div class="sm mut">📝 ' + esc((k === 'lecture' ? 'المحاضرة' : ((EXTRAS.find((e) => e.key === k) || {}).label || k)) + ': ' + m.pnotes[k]) + '</div>').join('') : '<div class="mut sm">لا فقرات بعد.</div>') + '</div>' +
+      '<div class="row"><button class="btn" data-medit="' + esc(m.id) + '">✏️ عدّل</button><button class="btn o" data-minv="1">📨 رسالة الاتفاق</button><button class="btn o" data-mhus="1">📊 تقرير المكان</button>' + (m.status !== 'تمّ' ? '<button class="btn o" data-mst="تمّ">✔️ تمّ</button>' : '') + (m.status !== 'ملغى' ? '<button class="btn o" data-mst="ملغى">🚫 ألغِ</button>' : '<button class="btn o" data-mst="مجدول">↩️ أعده مجدولاً</button>') + '</div>');
     el.addEventListener('click', async (e) => {
       const s = e.target.closest('[data-mst]'); if (s) {
         if (String(m.id).startsWith('tmp-')) { toast('انتظر رفع المجلس الجديد أولاً، ثم غيّر حالته.'); return; }
@@ -510,6 +660,8 @@
       }
       const ed = e.target.closest('[data-medit]'); if (ed) { history.back(); setTimeout(() => majForm(m), 50); }
       const lc = e.target.closest('[data-lec]'); if (lc) openLec(lc.getAttribute('data-lec'));
+      if (e.target.closest('[data-minv]')) openInv(m.husseiniya);
+      if (e.target.closest('[data-mhus]')) openHusRep(m.husseiniya);
     });
   }
   function openFam(name) {
@@ -539,6 +691,13 @@
     const tv = String(edit ? m.time || '' : '').split(':'), th = tv[0] || '', tmn = tv[1] || '';
     const timeHtml = '<div class="row" style="gap:4px;flex-wrap:nowrap" dir="ltr"><select class="in" id="fTH" style="width:auto"><option value="">--</option>' + Array.from({ length: 24 }, (_, i) => pad(i)).map((h) => '<option' + (h === th ? ' selected' : '') + '>' + h + '</option>').join('') + '</select><b>:</b><select class="in" id="fTM" style="width:auto">' + Array.from(new Set(['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].concat(tmn ? [tmn] : []))).sort().map((x) => '<option' + (x === (tmn || '00') ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></div>';
     const field = (lbl, inner) => '<label class="lbl">' + lbl + '</label>' + inner;
+    // ✍️ كل خانة: أكثر من فقرة (سطر لكل فقرة) + 📝 ملاحظة عليها (كما في البرنامج)
+    const PN = (edit && m.pnotes) || {};
+    const fxRow = (k, list, val) => '<div class="row fxr" style="flex-wrap:nowrap;margin-bottom:4px"><input class="in" style="flex:1" data-fi="' + k + '" list="' + list + '" value="' + esc(val) + '"><button type="button" class="btn s o" data-fxdel="1" title="احذف هذا السطر" style="flex:none">✕</button></div>';
+    const itemsField = (k, lbl, list) => { const vals = edit ? String(m[k] || '').split('\n').map((x) => x.trim()).filter(Boolean) : []; if (!vals.length) vals.push('');
+      return '<div class="fx" data-fk="' + k + '" data-fl="' + list + '"><label class="lbl">' + lbl + '</label>' + vals.map((v1) => fxRow(k, list, v1)).join('') +
+        '<div class="row" style="gap:6px"><button type="button" class="btn s o" data-fxadd="' + k + '">➕ فقرة أخرى</button><button type="button" class="btn s o" data-fxnote="' + k + '">📝 ملاحظة' + (PN[k] ? ' ✓' : '') + '</button></div>' +
+        '<input class="in' + (PN[k] ? '' : ' hidden') + '" data-fn="' + k + '" placeholder="📝 مثل: قرأت النصف الأول فقط" value="' + esc(PN[k] || '') + '" style="margin-top:4px"></div>'; };
     const el = sheet(edit ? '✏️ تعديل مجلس' : (priv ? '🕯️ مجلس خاص جديد' : '🕌 مجلس جديد'),
       '<div class="card">' +
       (priv ? field('نوع المجلس', '<input class="in" id="fType" list="dlT" value="' + v('mtype') + '">' + dl('dlT', B.privTypes)) +
@@ -551,21 +710,25 @@
       (priv && !edit ? '<div style="width:90px">' + field('الليالي', '<input class="in" id="fNights" type="number" min="1" max="10" value="1">') + '</div>' : '') + '</div>' +
       field('الحالة', '<select class="in" id="fSt">' + (B.statuses || ['مجدول', 'تمّ', 'ملغى']).map((s) => '<option' + ((edit ? m.status : 'مجدول') === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select>') +
       '</div><div class="card"><div class="b">الفقرات' + (priv && !edit ? ' <span class="mut xs">(لليلة الأولى فقط إن كانت عدة ليالٍ)</span>' : '') + '</div>' + dl('dlL', lecTitles) + EXTRAS.map((e) => dl('dlX-' + e.key, exOf(e.key))).join('') +
-      field('📚 المحاضرة', '<input class="in" id="fLec" list="dlL" value="' + esc(edit ? String(m.lecture || '').split('\n')[0] : '') + '">') +
-      EXTRAS.map((e) => field(esc(e.icon + ' ' + e.label), '<input class="in" data-fx="' + e.key + '" list="dlX-' + e.key + '" value="' + esc(edit ? String(m[e.key] || '').split('\n')[0] : '') + '">')).join('') +
+      itemsField('lecture', '📚 المحاضرة', 'dlL') + EXTRAS.map((e) => itemsField(e.key, esc(e.icon + ' ' + e.label), 'dlX-' + e.key)).join('') +
       '<div id="fWarn"></div>' + field('ملاحظات', '<textarea class="in" id="fNotes">' + v('notes') + '</textarea>') + '</div>' +
       '<button class="btn" id="fSave" style="width:100%">💾 احفظ' + (online() ? '' : ' (يُرفع حين يعود الإنترنت)') + '</button>');
     // ⚠️ هل قرأت هذه الفقرة لهذه العائلة / في هذا المكان؟ (من بيانات الجهاز)
     const warn = () => {
       const fam = priv ? famNames($('#fFam', el).value).map(famNorm) : [], place = nz($('#fHus', el).value);
-      const ts = [$('#fLec', el).value].concat($$('[data-fx]', el).map((i) => i.value)).map((t) => t.trim()).filter(Boolean);
+      const ts = $$('[data-fi]', el).map((i) => i.value.trim()).filter(Boolean);
       $('#fWarn', el).innerHTML = ts.map((t) => {
         const R = readsOf(t).filter((x) => !m || x.id !== m.id), F = fam.length ? R.filter((x) => famNames(x.family).some((n) => fam.includes(famNorm(n)))) : [], P = R.filter((x) => !F.includes(x) && nz(x.husseiniya) === place);
         return (F.length ? '<div class="alert e">🔴 «' + esc(t) + '» قرأتها لهذه العائلة: ' + F.slice(-3).map((x) => esc(x.iso.replace(/-/g, '/') + ' — ' + x.husseiniya + (x.deceased ? ' (عن روح ' + x.deceased + ')' : ''))).join(' | ') + '</div>' : '') +
           (P.length ? '<div class="alert w">🟡 «' + esc(t) + '» قُرئت في هذا المكان: ' + P.slice(-3).map((x) => esc(x.iso.replace(/-/g, '/'))).join(' | ') + '</div>' : '');
       }).join('');
     };
-    el.addEventListener('input', (e) => { if (e.target.matches('#fLec,[data-fx],#fFam,#fHus')) warn(); });
+    el.addEventListener('input', (e) => { if (e.target.matches('[data-fi],#fFam,#fHus')) warn(); });
+    el.addEventListener('click', (e) => {
+      const ad = e.target.closest('[data-fxadd]'); if (ad) { const box = ad.closest('.fx'); const r1 = document.createElement('div'); r1.innerHTML = fxRow(box.getAttribute('data-fk'), box.getAttribute('data-fl'), ''); const nr = r1.firstChild; box.insertBefore(nr, ad.parentNode); nr.querySelector('input').focus(); return; }
+      const dx = e.target.closest('[data-fxdel]'); if (dx) { const box = dx.closest('.fx'), rows = $$('.fxr', box); if (rows.length > 1) dx.parentNode.remove(); else rows[0].querySelector('input').value = ''; warn(); return; }
+      const nt = e.target.closest('[data-fxnote]'); if (nt) { const i1 = $('[data-fn="' + nt.getAttribute('data-fxnote') + '"]', el); i1.classList.toggle('hidden'); if (!i1.classList.contains('hidden')) i1.focus(); }
+    });
     // 🕌 اختيار الحسينية من الدليل يملأ مسؤولها ووقتها (للمجلس العام)
     el.addEventListener('change', (e) => { if (e.target.id !== 'fHus' || priv) return; const H = ((SNAP && SNAP.parts && SNAP.parts.hus) || []).find((x) => x.name === e.target.value.trim()); if (!H) return; const o = $('#fOwner', el); if (H.owner && (!o.value || o.dataset.auto)) { o.value = H.owner; o.dataset.auto = '1'; } const t = /^(\d{1,2}):(\d{2})/.exec(H.time || ''); if (t && !$('#fTH', el).value) { $('#fTH', el).value = pad(+t[1]); const mm = $('#fTM', el); if (![...mm.options].some((op) => op.value === t[2])) mm.add(new Option(t[2])); mm.value = t[2]; } });
     el.addEventListener('input', (e) => { if (e.target.id === 'fOwner') delete e.target.dataset.auto; });
@@ -574,10 +737,11 @@
     warn();
     $('#fSave', el).onclick = async () => {
       const g = (id) => { const x = $(id, el); return x ? x.value.trim() : ''; };
-      const rec = { husseiniya: g('#fHus'), owner: g('#fOwner'), status: g('#fSt'), notes: g('#fNotes'), lecture: g('#fLec') };
-      EXTRAS.forEach((e) => { rec[e.key] = ($('[data-fx="' + e.key + '"]', el) || {}).value || ''; });
-      // تعديل: ما بعد السطر الأول (فقرات أخرى) يبقى كما هو
-      if (edit) { const keep = (k) => String(m[k] || '').split('\n').slice(1).join('\n'); ['lecture'].concat(EXTRAS.map((e) => e.key)).forEach((k) => { const rest = keep(k); if (rest) rec[k] = [rec[k], rest].filter(Boolean).join('\n'); }); }
+      const rec = { husseiniya: g('#fHus'), owner: g('#fOwner'), status: g('#fSt'), notes: g('#fNotes'), pnotes: {} };
+      ['lecture'].concat(EXTRAS.map((e) => e.key)).forEach((k) => {
+        rec[k] = $$('[data-fi="' + k + '"]', el).map((i) => i.value.trim()).filter(Boolean).filter((v1, j, a) => a.indexOf(v1) === j).join('\n');
+        const n1 = ($('[data-fn="' + k + '"]', el) || {}).value; if (n1 && n1.trim() && rec[k]) rec.pnotes[k] = n1.trim();
+      });
       if (priv) { Object.assign(rec, { mtype: g('#fType'), family: famNames(g('#fFam')).join('، '), famnote: g('#fFamNote'), deceased: g('#fDec'), ophone: g('#fPhone') }); if (!rec.family) return toast('🕯️ اكتب اسم العائلة'); if (!rec.mtype) return toast('🕯️ اختر نوع المجلس'); }
       if (!rec.husseiniya) return toast('اكتب المكان');
       const iso = g('#fDate'), time = g('#fTH') ? g('#fTH') + ':' + g('#fTM') : '';
@@ -599,8 +763,8 @@
   async function queue(o) {
     o.id = o.id || uid(); o.at = Date.now(); o.st = 'pending';
     await opPut(o); OPS = await opsAll(); buildData(); render();
-    toast(online() ? '⏳ يُرفع الآن…' : '💾 حُفظ على الجهاز — يُرفع حين يعود الإنترنت');
-    if (online()) { try { SYNC.busy = true; syncUi(); await pushOps(); } catch (e) { SYNC.err = '⚠️ ' + (e.message || e); } SYNC.busy = false; buildData(); render(); syncUi(); const bad = OPS.find((x) => x.id === o.id && x.st !== 'pending'); if (bad) toast('⚠️ يحتاج قرارك — افتح «بانتظار الرفع»'); else if (!OPS.find((x) => x.id === o.id)) toast('✅ رُفع للبرنامج'); }
+    if (!o.quiet) toast(online() ? '⏳ يُرفع الآن…' : '💾 حُفظ على الجهاز — يُرفع حين يعود الإنترنت');
+    if (online()) { try { SYNC.busy = true; syncUi(); await pushOps(); } catch (e) { SYNC.err = '⚠️ ' + (e.message || e); } SYNC.busy = false; buildData(); render(); syncUi(); const bad = OPS.find((x) => x.id === o.id && x.st !== 'pending'); if (bad) toast('⚠️ يحتاج قرارك — افتح «بانتظار الرفع»'); else if (!OPS.find((x) => x.id === o.id) && !o.quiet) toast('✅ رُفع للبرنامج'); }
   }
 
   // ---------------- 🖱️ النقرات ----------------
@@ -622,6 +786,18 @@
     const ht = t.closest('[data-htype]'); if (ht) { SUB.t = ht.getAttribute('data-htype'); render(); return; }
     const dd = t.closest('[data-dday]'); if (dd) { SUB.i = +dd.getAttribute('data-dday'); render(); return; }
     const oc = t.closest('[data-occ]'); if (oc && !oc.disabled) { SUB.i = +oc.getAttribute('data-occ'); render(); return; }
+    const dp = t.closest('[data-dper]'); if (dp) { SUB.n = dp.getAttribute('data-dper') === 'n'; SUB.keepY = true; render(); return; }
+    const dm = t.closest('[data-dmsg]'); if (dm) { const [i1, per] = dm.getAttribute('data-dmsg').split('|'), d1 = ((SNAP && SNAP.parts && SNAP.parts.daily) || [])[+i1]; if (d1) openText(per === 'n' ? '🌙 رسالة ' + (d1.night && d1.night.title || 'الليلة') : '📤 رسالة أعمال ' + d1.weekday + ' ' + d1.hijri, per === 'n' ? d1.msgN : d1.msg, 'نص الرسالة من آخر مزامنة (' + fmtAt(CFG.lastSync) + ').'); return; }
+    const ad = t.closest('[data-adone]'); if (ad) { const [iso, ...ck] = ad.getAttribute('data-adone').split('|'), check = ck.join('|'), d1 = dayActs(iso, check); const on = !(d1 && isDone(iso, d1));
+      const old = OPS.find((o) => o.fn === 'Daily_done' && o.args[0] === iso && o.args[1] === check && o.st === 'pending'); if (old) await opDel(old.id);
+      await queue({ fn: 'Daily_done', args: [iso, check, on], label: (on ? '✔️ تمّ: ' : '↩️ لم يتمّ: ') + ((d1 && (d1.title || d1.category)) || 'عمل') + ' — ' + iso, quiet: true }); return; }
+    const ri = t.closest('[data-rinv]'); if (ri) { openInv(ri.getAttribute('data-rinv')); return; }
+    const hr = t.closest('[data-husr]'); if (hr) { openHusRep(hr.getAttribute('data-husr')); return; }
+    const rm = t.closest('[data-rmode]'); if (rm) { go('rep', { mode: rm.getAttribute('data-rmode') }); return; }
+    const rmo = t.closest('[data-rmon]'); if (rmo) { SUB.mon = +rmo.getAttribute('data-rmon'); SUB.keepY = true; render(); return; }
+    const rcal = t.closest('[data-rcal]'); if (rcal) { SUB.cal = rcal.getAttribute('data-rcal'); SUB.mon = 0; render(); return; }
+    const rcp = t.closest('[data-rcopy]'); if (rcp) { copyText(REP_TXT); return; }
+    if (t.id === 'remTest') { remindTest(); return; }
     // الطابور
     const qid = (a) => { const b = t.closest('[' + a + ']'); return b ? b.getAttribute(a) : null; };
     const fix = async (id, f) => { const o = OPS.find((x) => x.id === id); if (!o) return; f(o); o.st = 'pending'; o.err = ''; await opPut(o); OPS = await opsAll(); buildData(); render(); if (online()) sync({ noText: true }); };
@@ -641,6 +817,7 @@
     if (t.id === 'setLogin') { CFG.tok = ''; await kvSet('cfg', CFG); setupScreen(); return; }
     if (t.id === 'setLock') { UNLOCKED = false; lockNow(); return; }
     if (t.id === 'setExec') { setupScreen(); return; }
+    if (t.id === 'remOn') { await remindSet(t.checked); return; }
     if (t.id === 'setWipe') { if (confirm('مسح كل بيانات التطبيق من هذا الجهاز؟')) wipe(); return; }
   });
   function lockNow() { pinScreen('enter', () => { window.onkeydown = null; $('#app').onclick = null; render(); }); }

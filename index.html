@@ -63,6 +63,8 @@
   .keys button { height: 60px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); font-size: 22px; cursor: pointer; }
   .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; } .bar i { display: block; height: 100%; background: var(--pri); width: 0; transition: width .3s; }
   .hidden { display: none !important; }
+  .act.done .at { opacity: .55; text-decoration: line-through; }
+  .fx { border-top: 1px dashed var(--line); padding-top: 4px; margin-top: 6px; } .fx:first-of-type { border-top: 0; }
   .sheet { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow: auto; }
   .sheet .top { background: var(--card); color: var(--ink); border-bottom: 1px solid var(--line); }
   .sheet .top .chip { background: var(--pri2); color: var(--pri); }
