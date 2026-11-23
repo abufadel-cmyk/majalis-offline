@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const APP_VER = '1.5';
+  const APP_VER = '1.6';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -379,9 +379,9 @@
       let h = '<div class="card"><div class="kv"><span class="k">المستخدم</span><span>' + esc((CFG.user && CFG.user.name) || '—') + '</span><span class="k">الجهاز</span><span>' + esc(CFG.devName || '') + '</span><span class="k">آخر مزامنة</span><span>' + esc(fmtAt(CFG.lastSync)) + '</span>' +
         '<span class="k">الفقرات</span><span>' + LEC.length + '</span><span class="k">المجالس</span><span>' + MAJ.length + '</span><span class="k">النصوص</span><span id="txtN">…</span><span class="k">الإصدار</span><span>' + APP_VER + '</span></div>' +
         '<div class="row" style="margin-top:10px"><button class="btn" data-sync="1">🔄 زامن الآن</button><button class="btn o" data-sync="full">📄 أعد تنزيل النصوص كلها</button></div></div>' +
-        '<div class="card"><div class="b">🔔 تذكير بالمجالس</div><label class="row sm" style="margin-top:6px"><input type="checkbox" id="remOn"' + (CFG.rem && CFG.rem.on ? ' checked' : '') + '> ذكّرني قبل كل مجلس بـ <select class="in" id="remMin" style="width:auto">' + [15, 30, 60, 90, 120, 180].map((n) => '<option value="' + n + '"' + (((CFG.rem && CFG.rem.min) || 60) === n ? ' selected' : '') + '>' + (n < 60 ? n + ' دقيقة' : n === 60 ? 'ساعة' : n === 120 ? 'ساعتين' : (n / 60) + ' ساعات') + '</option>').join('') + '</select></label>' +
+        '<div class="card"><div class="b">🔔 التنبيهات</div>' + calCard() + '<details style="margin-top:8px"' + (CFG.rem && (CFG.rem.on || CFG.rem.eve) ? ' open' : '') + '><summary class="sm">تذكير إضافي من هذا التطبيق نفسه (اختياري)</summary><div class="mut xs" style="margin-top:4px">لا تحتاجه إن فعّلت تنبيهات التقويم — وإلا يصلك التنبيه مرتين.</div><label class="row sm" style="margin-top:6px"><input type="checkbox" id="remOn"' + (CFG.rem && CFG.rem.on ? ' checked' : '') + '> ذكّرني قبل كل مجلس بـ <select class="in" id="remMin" style="width:auto">' + [15, 30, 60, 90, 120, 180].map((n) => '<option value="' + n + '"' + (((CFG.rem && CFG.rem.min) || 60) === n ? ' selected' : '') + '>' + (n < 60 ? n + ' دقيقة' : n === 60 ? 'ساعة' : n === 120 ? 'ساعتين' : (n / 60) + ' ساعات') + '</option>').join('') + '</select></label>' +
           '<label class="row sm" style="margin-top:6px">🌙 ملخص مجالس الغد كل مساء الساعة <select class="in" id="remEve" style="width:auto"><option value="">— لا —</option>' + ['18:00', '19:00', '20:00', '21:00', '22:00', '23:00'].map((x) => '<option' + ((CFG.rem && CFG.rem.eve) === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label>' +
-          '<div class="mut xs" style="margin-top:4px">' + remindNote() + '</div><div class="row" style="margin-top:6px"><button class="btn s o" id="remTest">🔔 جرّب إشعاراً الآن</button></div></div>' +
+          '<div class="mut xs" style="margin-top:4px">' + remindNote() + '</div><div class="row" style="margin-top:6px"><button class="btn s o" id="remTest">🔔 جرّب إشعاراً الآن</button></div></details></div>' +
         '<div class="card"><div class="row"><button class="btn o" id="setPin">🔐 غيّر رمز PIN</button><button class="btn o" id="setLogin">👤 دخول من جديد</button><button class="btn o" id="setLock">🔒 اقفل الآن</button></div></div>' +
         '<div class="card"><div class="b">رابط البرنامج</div><div class="xs mut" dir="ltr" style="word-break:break-all">' + esc(CFG.exec) + '</div><button class="btn s o" id="setExec" style="margin-top:6px">✏️ غيّره</button></div>' +
         '<div class="card"><div class="b">🛡️ نسخة من بيانات هذا الجهاز</div><div class="mut xs">ملف واحد فيه المجالس والفقرات والنصوص وما لم يُرفع — احفظه في الجوال أو الكمبيوتر، ويُستورد على أي جهاز ولو بلا إنترنت.</div><div class="row" style="margin-top:6px"><button class="btn s" id="bkOut">⬇️ نزّل النسخة</button><button class="btn s o" id="bkIn">📥 استورد نسخة</button></div><div id="bkRes" class="sm" style="margin-top:4px"></div></div>' +
@@ -635,8 +635,10 @@
 
   // ---------------- 🔔 التذكير بالمجالس ----------------
   // الخطة تُحفظ في الجهاز (remind)، والتطبيق المفتوح يفحصها كل 30 ثانية، وعامل الخدمة يفحصها عند «المزامنة الدورية» (أندرويد بعد التثبيت)
-  const remindNote = () => !('Notification' in window) ? '⚠️ هذا المتصفح لا يدعم الإشعارات.' : Notification.permission === 'denied' ? '⚠️ الإشعارات ممنوعة لهذا التطبيق من إعدادات المتصفح/الجوال — اسمح بها ثم فعّل التذكير.' :
-    'يعمل والتطبيق مفتوح أو في الخلفية. وعلى الأندرويد بعد تثبيته يفحص أيضاً وهو مغلق كل فترة (يحددها الجوال) — فقد يتأخر قليلاً.';
+  const remindNote = () => (!('Notification' in window) ? '⚠️ هذا المتصفح لا يدعم الإشعارات.' : Notification.permission === 'denied' ? '⚠️ الإشعارات ممنوعة لهذا التطبيق من إعدادات المتصفح/الجوال — اسمح بها ثم فعّل التذكير.' :
+    'يعمل والتطبيق مفتوح أو في الخلفية.' + (bgOk() ? ' وعلى كروم أندرويد بعد التثبيت يفحص أيضاً وهو مغلق، لكن الجوال يحدد متى (قد يتأخر ساعات).' : ''));
+  const calCard = () =>  '<div class="card" style="margin-top:6px;border-color:#2e7d32"><b>' + '✅ التنبيهات الموثوقة تصلك من تقويم Google' + (bgOk() ? '' : ' <span style="color:#b26a00">(هذا المتصفح لا يستطيع التنبيه والتطبيق مغلق، مثل متصفح سامسونج)</span>') + '</b><div class="xs" style="margin-top:4px">قبل كل مجلس وفي وقته بالضبط، حتى والجوال مقفل. فعّلها مرة واحدة من البرنامج على الكمبيوتر ← ⚙️ الإعدادات ← 🔔 الإشعارات (تقويم Google): فعّل «🕌 نبّهني قبل مجالسي» و«🌙 ملخص مجالس الغد كل ليلة». يصلك الإشعار من تطبيق <b>تقويم Google</b> في جوالك حتى وهو مقفل — ثبّته وسجّل فيه بحسابك.</div></div>';
+  function bgOk() { try { return 'periodicSync' in ServiceWorkerRegistration.prototype; } catch (e) { return false; } }
   async function remindPlan() {
     if (!DB) return;
     const R0 = CFG.rem || {}, min = R0.min || 60, list = [];
