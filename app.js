@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const APP_VER = '1.6';
+  const APP_VER = '1.7';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -393,7 +393,7 @@
   function dailyHtml(d, short) {
     let h = '';
     const mn = [d.moonTop, d.moonNote].find((x) => typeof x === 'string' && x.trim()); if (mn) h += '<div class="alert i">' + esc(mn) + '</div>';
-    (d.occasions || []).forEach((o) => { h += '<div class="alert w">📆 ' + esc(o.title || o.text || o) + '</div>'; });
+    (d.occasions || []).forEach((o) => { const t = typeof o === 'string' ? o : (o && (o.label || o.title || o.text || o.name)) || ''; if (!t) return; h += '<div class="alert w">📆 ' + esc(t) + (o && o.yearText ? ' <span class="mut xs">' + esc(o.yearText) + '</span>' : '') + (o && o.when === 'ليلة' ? ' <span class="tag">🌙 ليلة</span>' : '') + '</div>'; });
     (d.groups || []).forEach((g) => {
       const its = (g.items || []).filter((x) => !short || x.home || x.inMsg);
       if (!its.length) return;
