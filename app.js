@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const APP_VER = '1.7';
+  const APP_VER = '1.8';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -272,11 +272,24 @@
   const go = (v, sub) => { VIEW = v; SUB = sub || {}; window.scrollTo(0, 0); render(); };
 
   // ---------- صفحات ----------
+  // 📤 أرسل الموقع: الاسم · موعد المجلس · العنوان · الخريطة · الهاتف — لمن يسألك «أين مجلسكم اليوم؟»
+  const shareBtn = (name, iso, time) => '<button class="btn sm" data-hshare="' + esc(name) + '" data-hiso="' + esc(iso || '') + '" data-htime="' + esc(time || '') + '" title="أرسل الموقع والتفاصيل">📤 الموقع</button>';
+  const husShareText = (name, iso, time) => {
+    const h = HUSL.find((x) => x.name === name) || {}, L = [], DN = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    const ty = h.type || 'حسينية'; L.push((ty === 'مسجد' ? '🕌 ' : ty === 'ديوانية' || ty === 'منزل' ? '🏠 ' : '🕌 ') + (ty !== 'حسينية' && name.indexOf(ty) < 0 ? ty + ' ' : ty === 'حسينية' && name.indexOf('حسينية') < 0 ? 'حسينية ' : '') + name);
+    if (iso || time) { const d = iso ? new Date(iso + 'T12:00:00') : null, td = isoOf(new Date()), tm = isoOf(new Date(Date.now() + 864e5)); const tt = String(time || '').match(/^(\d{1,2}):(\d{2})/);
+      L.push('📅 المجلس ' + (iso ? (iso === td ? 'اليوم ' : iso === tm ? 'غداً ' : 'يوم ') + DN[d.getDay()] + (iso === td || iso === tm ? '' : ' ' + d.getDate() + '/' + (d.getMonth() + 1)) : '') + (tt ? ' · ⏰ ' + ((+tt[1] % 12) || 12) + ':' + tt[2] + ' ' + (+tt[1] >= 12 ? 'م' : 'ص') : '')); }
+    if (h.addressText || h.address) L.push('📍 العنوان: ' + (h.addressText || h.address));
+    if (h.map) L.push('🗺️ الموقع على الخريطة' + (h.mapExact ? '' : ' (تقريبي)') + ':\n' + h.map);
+    const ph = (h.phones && h.phones.length ? h.phones : h.phone ? [{ phone: h.phone }] : []).map((q) => q.phone).filter(Boolean);
+    if (ph.length) L.push('📞 للتواصل' + (h.owner ? ' (' + h.owner + ')' : '') + ': ' + ph.join(' · '));
+    return { text: L.join('\n'), miss: [!(h.addressText || h.address) && 'العنوان', !h.map && 'الخريطة', !ph.length && 'الهاتف'].filter(Boolean), found: !!h.name };
+  };
   const majRow = (m) => '<div class="item" data-maj="' + esc(m.id) + '"><div class="row"><span class="b" dir="ltr">' + esc(m.time || '—') + '</span><span class="grow">' +
     (isPriv(m) ? '<span class="ptag">🕯️ ' + esc(privTitle(m)) + '</span><br>' : '') + '<span class="t' + (m.status === 'ملغى' ? ' mut" style="text-decoration:line-through' : '') + '">' + esc(m.husseiniya) + '</span>' +
     (m._pend ? ' <span class="badge" title="بانتظار الرفع">⏳</span>' : '') + (m.status === 'تمّ' ? ' <span class="tag">✔️ تمّ</span>' : m.status === 'ملغى' ? ' <span class="tag">🚫 ملغى</span>' : '') +
     '<div class="mut sm">' + esc(dayCell(m.iso)) + ' · ' + esc(hijriOf(m.iso)) + '</div>' +
-    (majItems(m).length ? '<div class="sm">' + majItems(m).map((x) => esc(x.icon + ' ' + x.t)).join(' · ') + '</div>' : '') + '</span></div></div>';
+    (majItems(m).length ? '<div class="sm">' + majItems(m).map((x) => esc(x.icon + ' ' + x.t)).join(' · ') + '</div>' : '') + '</span>' + (!isPriv(m) && m.status !== 'ملغى' ? shareBtn(m.husseiniya, m.iso, m.time) : '') + '</div></div>';
   const lecRow = (l, extra) => '<div class="item" data-lec="' + l.row + '"><div class="t">' + esc(l.title) + (l._pend ? ' <span class="badge">⏳</span>' : '') + '</div><div class="mut sm">📁 ' + esc(l.folder) + (l.rate ? ' · ⭐ ' + esc(l.rate) : '') + (l.tags.length ? ' · ' + l.tags.map((t) => '<span class="tag">' + esc(t) + '</span>').join('') : '') + '</div>' + (extra || '') + '</div>';
 
   const VIEWS = {
@@ -478,7 +491,7 @@
     const mine = MAJ.filter((m) => m.husseiniya === x.name && m.status !== 'ملغى'), last = mine.filter((m) => m.iso <= isoOf(new Date())).pop();
     const ph = (x.phones && x.phones.length ? x.phones : x.phone ? [{ phone: x.phone, wa: x.wa }] : []);
     return '<div class="item" data-husr="' + esc(x.name) + '"><div class="t">' + (x.type && x.type !== 'حسينية' ? '<span class="tag">' + esc(x.type) + '</span> ' : '') + esc(x.name) + '</div><div class="sm">' + (x.owner ? '👤 ' + esc(x.owner) + ' ' : '') + ph.map((p) => '<a href="tel:' + esc(p.phone) + '" dir="ltr">📞 ' + esc(p.phone) + '</a>' + (p.wa ? ' <a href="https://wa.me/' + esc(p.wa) + '" target="_blank">💬</a>' : '')).join(' · ') + '</div>' +
-      (x.addressText ? '<div class="mut xs">📍 ' + esc(x.addressText) + '</div>' : '') + (x.weekdaysText || x.hdaysText ? '<div class="mut xs">📆 ' + esc([x.weekdaysText, x.hdaysText, x.time].filter(Boolean).join(' · ')) + '</div>' : '') + '<div class="mut xs">قراءاتي: ' + mine.length + (last ? ' · آخرها ' + esc(last.iso.replace(/-/g, '/')) : '') + '</div></div>';
+      (x.addressText ? '<div class="mut xs">📍 ' + esc(x.addressText) + '</div>' : '') + (x.weekdaysText || x.hdaysText ? '<div class="mut xs">📆 ' + esc([x.weekdaysText, x.hdaysText, x.time].filter(Boolean).join(' · ')) + '</div>' : '') + '<div class="mut xs">قراءاتي: ' + mine.length + (last ? ' · آخرها ' + esc(last.iso.replace(/-/g, '/')) : '') + '</div><div style="margin-top:4px">' + shareBtn(x.name) + '</div></div>';
   }
   async function searchTexts(ws, box) {
     const byFile = {}; LEC.forEach((l) => { if (l.fileId) byFile[l.fileId] = l; });
@@ -596,7 +609,7 @@
     const el = sheet(esc(title), '<div class="card">' + (note ? '<div class="mut xs">' + esc(note) + '</div>' : '') + '<textarea class="in" id="txT" style="min-height:340px;margin-top:6px">' + esc(text || '') + '</textarea><div class="row" style="margin-top:6px"><button class="btn" id="txCp">📋 انسخ</button><button class="btn o" id="txWa">💬 واتساب</button>' + (navigator.share ? '<button class="btn o" id="txSh">↗ مشاركة</button>' : '') + '</div></div>');
     if (!text) $('#txT', el).value = 'لا رسالة محفوظة — زامن وأنت على الإنترنت.';
     $('#txCp', el).onclick = () => copyText($('#txT', el).value);
-    $('#txWa', el).onclick = () => window.open('https://wa.me/?text=' + encodeURIComponent($('#txT', el).value), '_blank');
+    $('#txWa', el).onclick = () => window.open('https://api.whatsapp.com/send?text=' + encodeURIComponent(String($('#txT', el).value).normalize('NFC')), '_blank');   // (wa.me يفسد الرموز في بعض الأجهزة)
     const sh = $('#txSh', el); if (sh) sh.onclick = () => navigator.share({ text: $('#txT', el).value }).catch(() => {});
   }
   // ✔️ عمل بمفتاحه في يوم/ليلة (من اللقطة)
@@ -846,6 +859,7 @@
   document.addEventListener('click', async (e) => {
     if (!UNLOCKED) return;
     const t = e.target;
+    const hsb = t.closest('[data-hshare]'); if (hsb) { e.stopPropagation(); const nm = hsb.getAttribute('data-hshare'), r = husShareText(nm, hsb.getAttribute('data-hiso'), hsb.getAttribute('data-htime')); openText('📤 ' + nm, r.text, !r.found ? 'ليس في دليل الحسينيات — أضف عنوانه وموقعه من البرنامج.' : r.miss.length ? '⚠️ لا ' + r.miss.join(' ولا ') + ' لهذا المكان في الدليل — أضفها من البرنامج لتُرسَل كل مرة.' : 'عدّل النص إن شئت، ثم 💬 واتساب أو 📋 انسخ.'); return; }
     const tab = t.closest('[data-tab]'); if (tab) { go(tab.getAttribute('data-tab')); return; }
     const g = t.closest('[data-go]'); if (g) { e.preventDefault(); go(g.getAttribute('data-go')); return; }
     if (t.closest('#syncChip')) { sync(); return; }
