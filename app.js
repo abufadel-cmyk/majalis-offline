@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const APP_VER = '1.9';
+  const APP_VER = '1.10';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -294,6 +294,16 @@
     (majItems(m).length ? '<div class="sm">' + majItems(m).map((x) => esc(x.icon + ' ' + x.t)).join(' · ') + '</div>' : '') + '</span>' + (m.husseiniya && m.status !== 'ملغى' ? shareBtn(m.husseiniya, m.iso, m.time, m) : '') + '</div></div>';
   const lecRow = (l, extra) => '<div class="item" data-lec="' + l.row + '"><div class="t">' + esc(l.title) + (l._pend ? ' <span class="badge">⏳</span>' : '') + '</div><div class="mut sm">📁 ' + esc(l.folder) + (l.rate ? ' · ⭐ ' + esc(l.rate) : '') + (l.tags.length ? ' · ' + l.tags.map((t) => '<span class="tag">' + esc(t) + '</span>').join('') : '') + '</div>' + (extra || '') + '</div>';
 
+  // 📌 مجالس مضت بلا فقرات (الجديدة منذ تفعيل الميزة في البرنامج) — حتى تُدخَل فقراتها أو «✓ تمّ بلا فقرات»
+  function pendList() {
+    const P = (SNAP && SNAP.parts && SNAP.parts.pend) || null; if (!P || !P.from) return [];
+    const now = new Date(), today = isoOf(now), mins = now.getHours() * 60 + now.getMinutes(), ok = Object.assign({}, P.ok || {});
+    OPS.forEach((o) => { if (o.fn === 'Maj_pendOk') ok[o.args[0]] = 1; });
+    try { Object.assign(ok, JSON.parse(localStorage.getItem('offPendOk') || '{}')); } catch (e) {}
+    return MAJ.filter((m) => m.id && !/^tmp-/.test(String(m.id)) && m.status !== 'ملغى' && m.iso >= P.from && !ok[m.id] && !majItems(m).length &&
+      (m.iso < today || (m.iso === today && /^\d{1,2}:\d{2}/.test(m.time || '') && mins >= (+m.time.split(':')[0]) * 60 + (+m.time.split(':')[1]) + (P.after || 45))))
+      .sort((a, b) => (a.iso + a.time < b.iso + b.time ? -1 : 1));
+  }
   const VIEWS = {
     home() {
       const today = isoOf(new Date()), tm = isoOf(new Date(Date.now() + 864e5));
@@ -304,10 +314,11 @@
       if (bad) h += '<div class="alert w">⚠️ ' + bad + ' إدخال يحتاج قرارك قبل الرفع — <a href="#" data-go="queue">افتحها</a></div>';
       else if (n) h += '<div class="alert i">⏳ ' + n + ' إدخال بانتظار الرفع — <a href="#" data-go="queue">اعرضها</a></div>';
       if (!SNAP) h += '<div class="alert w">لم تتم أول مزامنة بعد. اضغط «🔄 زامن الآن» وأنت على الإنترنت (يفضّل Wi-Fi: النصوص كثيرة).</div>';
+      const PD = pendList(); if (PD.length) h += '<div class="card pend"><div class="b">📌 مجالس مضت تنتظر فقراتها (' + PD.length + ')</div>' + PD.map((m) => '<div class="li"><div class="row"><button class="btn s" data-pedit="' + esc(m.id) + '">📝 أدخل الفقرات</button><button class="btn s o" data-pok="' + esc(m.id) + '">✓ تمّ بلا فقرات</button></div><div class="sm"><span class="mut">' + esc(dayCell(m.iso)) + ' · ' + esc(m.time || '—') + '</span> ' + (isPriv(m) ? '<span class="ptag">🕯️ ' + esc(privTitle(m)) + '</span> ' : '') + '<b>' + esc(m.husseiniya) + '</b></div></div>').join('') + '</div>';
       h += '<div class="card"><div class="row"><span class="grow b">📅 مجالسي القادمة</span><button class="btn s" data-new="pub">➕ مجلس</button><button class="btn s o" data-new="priv">🕯️ خاص</button></div>' +
         (up.length ? up.map((m) => (m.iso === today ? '' : '') + majRow(m)).join('') : '<div class="mut sm">لا مجالس قادمة.</div>') + '</div>';
       if (d0) h += '<div class="card"><div class="b">🕌 اليوم: ' + esc(d0.weekday + ' ' + d0.hijri) + '</div>' + dailyHtml(d0, true) + '<a href="#" data-go="daily" class="sm">كل الأعمال والأيام القادمة ←</a></div>';
-      h += '<div class="card sm"><div class="row"><span class="grow">🔄 آخر مزامنة: <b>' + esc(fmtAt(CFG.lastSync)) + '</b> (' + esc(ago(CFG.lastSync)) + ')</span><button class="btn s" data-sync="1">🔄 زامن الآن</button></div></div>';
+      h += '<div class="card sm"><div class="row"><span class="grow">🔄 آخر مزامنة: <b>' + esc(fmtAt(CFG.lastSync)) + '</b> (' + esc(ago(CFG.lastSync)) + ')</span><button class="btn s" data-sync="1">🔄 زامن الآن</button></div>' + (recentGet().length ? '<div class="row" style="margin-top:6px"><button class="btn s o" data-recent="1">📖 آخر ما فتحت</button></div>' : '') + '</div>';
       return ['🏠 المحاضرات والمجالس', h];
     },
     search() {
@@ -333,7 +344,7 @@
       let h = '<div class="card"><input class="in" id="lq" type="search" placeholder="🔎 العنوان، الوسم، الملاحظة، المصدر…" value="' + esc(SUB.q || '') + '">' +
         '<div class="row" style="margin-top:6px"><select class="in" id="lf" style="flex:1"><option value="">📁 كل المجلدات</option>' + folders.map((f) => '<option' + (SUB.f === f ? ' selected' : '') + '>' + esc(f) + '</option>').join('') + '</select>' +
         '<select class="in" id="lr" style="width:auto"><option value="">⭐ الكل</option>' + ['مميز', 'وسط', 'عادي'].map((r) => '<option' + (SUB.r === r ? ' selected' : '') + '>' + r + '</option>').join('') + '</select></div>' +
-        '<label class="sm"><input type="checkbox" id="ln"' + (SUB.n ? ' checked' : '') + '> 📝 أظهر الملاحظات</label></div><div class="card" id="llist"></div>';
+        '<div class="row sm" style="margin-top:4px"><label class="grow"><input type="checkbox" id="ln"' + (SUB.n ? ' checked' : '') + '> 📝 أظهر الملاحظات</label>' + (recentGet().length ? '<button class="btn s o" data-recent="1">📖 آخر ما فتحت</button>' : '') + '</div></div><div class="card" id="llist"></div>';
       return ['📚 الفقرات (' + LEC.length + ')', h];
     },
     more() {
@@ -718,15 +729,18 @@
       (l.file ? '<div style="margin-top:6px"><a href="' + esc(l.file) + '" target="_blank" class="sm">📄 افتح الملف في Drive (يحتاج إنترنت)</a></div>' : '') + '</div>' +
       '<div class="card"><div class="row"><span class="grow b">📝 الملاحظات</span><button class="btn s o" id="noteEd">✏️ عدّل</button></div><div id="noteBox" class="sm" style="white-space:pre-line">' + (esc(l.notes) || '<span class="mut">لا ملاحظات.</span>') + '</div></div>' +
       '<div class="card"><div class="b">📖 قُرئت ' + R.length + ' مرة</div>' + (R.length ? R.slice().reverse().map((m) => '<div class="sm">• ' + esc(dayCell(m.iso)) + ' — ' + esc(m.husseiniya) + (isPriv(m) ? ' <span class="ptag">🕯️ ' + esc(privTitle(m)) + '</span>' : '') + '</div>').join('') : '') + (l.dates ? '<details class="sm" style="margin-top:4px"><summary class="mut">سجل القراءات في الكشف</summary><div style="white-space:pre-line">' + esc(l.dates) + '</div></details>' : '') + '</div>' +
-      '<div class="card"><div class="b">📄 النص</div><div id="txtBox" class="mut sm">⏳ …</div></div>');
+      '<div class="card"><div class="row rdbar"><span class="grow b">📄 النص</span><button class="btn s o" data-rz="-1" title="صغّر الخط">أ−</button><button class="btn s o" data-rz="1" title="كبّر الخط">أ+</button>' +
+      [['w', '⬜', 'أبيض'], ['p', '📜', 'ورقي دافئ'], ['n', '🌙', 'ليلي']].map((b) => '<button class="btn s ' + (rdGet().bg === b[0] ? '' : 'o') + '" data-rbg="' + b[0] + '" title="خلفية: ' + b[2] + '">' + b[1] + '</button>').join('') + '</div><div id="txtBox" class="mut sm">⏳ …</div></div>');
     el.addEventListener('click', async (e) => {
+      const rz = e.target.closest('[data-rz]'); if (rz) { const R0 = rdGet(); R0.sz = Math.max(13, Math.min(34, (R0.sz || 17) + 2 * +rz.getAttribute('data-rz'))); rdSet(R0); rdApply($('#txtBox', el)); return; }
+      const rb = e.target.closest('[data-rbg]'); if (rb) { const R0 = rdGet(); R0.bg = rb.getAttribute('data-rbg'); rdSet(R0); rdApply($('#txtBox', el)); $$('[data-rbg]', el).forEach((b) => b.classList.toggle('o', b !== rb)); return; }
       const r = e.target.closest('[data-rate]');
       if (r) { await queue({ lec: { row: l.row, title: l.title, rating: r.getAttribute('data-rate') }, label: '⭐ تقييم «' + l.title + '»: ' + r.getAttribute('data-rate') }); $$('[data-rate]', el).forEach((b) => b.classList.toggle('o', b !== r)); return; }
       if (e.target.id === 'noteEd') { const box = $('#noteBox', el); box.innerHTML = '<textarea class="in" id="noteIn">' + esc(l.notes) + '</textarea><button class="btn s" id="noteSave" style="margin-top:6px">💾 احفظ</button>'; return; }
       if (e.target.id === 'noteSave') { const v = $('#noteIn', el).value; await queue({ lec: { row: l.row, title: l.title, notes: v }, label: '📝 ملاحظات «' + l.title + '»' }); $('#noteBox', el).textContent = v; }
     });
     // 📌 نتذكر النص المفتوح وموضع القراءة: إن أُطفئت الشاشة وأعاد الهاتف تحميل التطبيق رجعنا إليه
-    const LK = 'offLastLec', save = (y) => { try { localStorage.setItem(LK, JSON.stringify({ row: l.row, y: y || 0, t: Date.now() })); } catch (e) {} };
+    const LK = 'offLastLec', save = (y) => { try { localStorage.setItem(LK, JSON.stringify({ row: l.row, y: y || 0, t: Date.now() })); recentPut(l.row, y || 0); } catch (e) {} };
     save(opt && opt.y); let st = 0;
     el.addEventListener('scroll', () => { clearTimeout(st); st = setTimeout(() => save(el.scrollTop), 300); }, { passive: true });
     const cl = el._close; el._close = () => { try { localStorage.removeItem(LK); } catch (e) {} cl(); };
@@ -734,10 +748,21 @@
     if (!l.fileId) { tb.textContent = 'لا ملف مرتبط بهذه الفقرة.'; return el; }
     const parts = (await txtOf(l.fileId)).sort((a, b) => String(a.part).localeCompare(String(b.part), 'en', { numeric: true }));
     if (!parts.length) { tb.innerHTML = 'النص غير محفوظ على الجهاز بعد (يُنزَّل مع المزامنة إن كان مفهرساً في البرنامج).'; return el; }
-    tb.className = 'txt'; tb.innerHTML = parts.map((p) => esc(p.text)).join('\n');
+    tb.className = 'txt'; tb.innerHTML = parts.map((p) => esc(p.text)).join('\n'); rdApply(tb);
     const hint = document.createElement('div'); hint.className = 'mut xs'; hint.textContent = 'النص من «فهرس المتن» (بلا تشكيل). للنسخة الأصلية افتح الملف.'; tb.parentNode.insertBefore(hint, tb);
     if (opt && opt.y) el.scrollTop = opt.y;
     return el;
+  }
+  // 📖 القارئ: حجم الخط والخلفية (محفوظان) وآخر ما فتحت (آخر 10 بموضع القراءة)
+  function rdGet() { try { return JSON.parse(localStorage.getItem('offReader') || '{}') || {}; } catch (e) { return {}; } }
+  function rdSet(o) { try { localStorage.setItem('offReader', JSON.stringify(o)); } catch (e) {} }
+  function rdApply(tb) { if (!tb) return; const R0 = rdGet(); tb.style.fontSize = (R0.sz || 17) + 'px'; ['w', 'p', 'n'].forEach((k) => tb.classList.toggle('bg-' + k, (R0.bg || 'w') === k && k !== 'w')); }
+  function recentGet() { try { return JSON.parse(localStorage.getItem('offRecent') || '[]') || []; } catch (e) { return []; } }
+  function recentPut(row, y) { const L = recentGet().filter((x) => x.row !== row); L.unshift({ row, y, t: Date.now() }); try { localStorage.setItem('offRecent', JSON.stringify(L.slice(0, 10))); } catch (e) {} }
+  function openRecent() {
+    const L = recentGet().map((x) => Object.assign({ l: LEC.find((q) => q.row === x.row) }, x)).filter((x) => x.l);
+    const el = sheet('📖 آخر ما فتحت', '<div class="card">' + (L.length ? L.map((x) => '<div class="li" data-rcopen="' + x.row + '" data-rcy="' + (x.y || 0) + '" style="cursor:pointer;padding:6px 0;border-bottom:1px solid var(--line)"><div class="b">📚 ' + esc(x.l.title) + '</div><div class="mut xs">' + esc(x.l.folder || '') + ' · ' + esc(ago(x.t)) + (x.y > 40 ? ' · 📍 تكمل من حيث وقفت' : '') + '</div></div>').join('') : '<div class="mut sm">لم تفتح نصاً بعد.</div>') + '</div>');
+    el.addEventListener('click', (e) => { const r = e.target.closest('[data-rcopen]'); if (!r) return; const row = +r.getAttribute('data-rcopen'), y = +r.getAttribute('data-rcy'); history.back(); setTimeout(() => openLec(row, { y }), 120); });
   }
   async function restoreLec() {   // بعد إعادة التحميل: افتح آخر نص كان مفتوحاً (خلال 12 ساعة) في موضعه نفسه
     let o = null; try { o = JSON.parse(localStorage.getItem('offLastLec') || 'null'); } catch (e) {}
@@ -883,6 +908,9 @@
     const mm = t.closest('[data-mmode]'); if (mm) { go('maj', { mode: mm.getAttribute('data-mmode') }); return; }
     const cal = t.closest('[data-cal]'); if (cal) { go('maj', { mode: 'cal', ym: cal.getAttribute('data-cal') }); return; }
     const cd = t.closest('[data-cday]'); if (cd) { SUB.day = cd.getAttribute('data-cday'); SUB.keepY = true; render(); return; }
+    if (t.closest('[data-recent]')) { openRecent(); return; }
+    const pe = t.closest('[data-pedit]'); if (pe) { const m = MAJ.find((x) => String(x.id) === pe.getAttribute('data-pedit')); if (m) majForm(m); return; }
+    const pk = t.closest('[data-pok]'); if (pk) { const m = MAJ.find((x) => String(x.id) === pk.getAttribute('data-pok')); if (m) { try { const L0 = JSON.parse(localStorage.getItem('offPendOk') || '{}'); L0[m.id] = Date.now(); localStorage.setItem('offPendOk', JSON.stringify(L0)); } catch (x) {} } if (m) await queue({ fn: 'Maj_pendOk', args: [m.id], label: '📌 تمّ بلا فقرات: ' + m.husseiniya + ' — ' + m.iso }); return; }
     const nw = t.closest('[data-new]'); if (nw) { majForm(null, { priv: nw.getAttribute('data-new') === 'priv', iso: nw.getAttribute('data-iso') || '' }); return; }
     const mj = t.closest('[data-maj]'); if (mj) { openMaj(mj.getAttribute('data-maj')); return; }
     const lc = t.closest('[data-lec]'); if (lc) { openLec(lc.getAttribute('data-lec')); return; }
