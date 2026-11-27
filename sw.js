@@ -1,6 +1,6 @@
 // عامل الخدمة: يحفظ ملفات التطبيق نفسه (لا البيانات) ليفتح بلا إنترنت.
 // البيانات في IndexedDB، وتأتي من برنامجك مباشرة — لا تمرّ من هنا ولا تُحفظ في هذا الكاش.
-const VER = 'majalis-offline-v9';
+const VER = 'majalis-offline-v10';
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable.png'];
 
 self.addEventListener('install', (e) => {

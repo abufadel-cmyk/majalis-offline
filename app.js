@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const APP_VER = '1.8';
+  const APP_VER = '1.9';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -273,23 +273,25 @@
 
   // ---------- صفحات ----------
   // 📤 أرسل الموقع: الاسم · موعد المجلس · العنوان · الخريطة · الهاتف — لمن يسألك «أين مجلسكم اليوم؟»
-  const shareBtn = (name, iso, time) => '<button class="btn sm" data-hshare="' + esc(name) + '" data-hiso="' + esc(iso || '') + '" data-htime="' + esc(time || '') + '" title="أرسل الموقع والتفاصيل">📤 الموقع</button>';
-  const husShareText = (name, iso, time) => {
+  const shareBtn = (name, iso, time, m) => '<button class="btn sm" data-hshare="' + esc(name) + '" data-hiso="' + esc(iso || '') + '" data-htime="' + esc(time || '') + '"' + (m && m.id ? ' data-hmid="' + esc(m.id) + '"' : '') + ' title="أرسل الموقع والتفاصيل">📤 الموقع</button>';
+  const husShareText = (name, iso, time, pm) => {
     const h = HUSL.find((x) => x.name === name) || {}, L = [], DN = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-    const ty = h.type || 'حسينية'; L.push((ty === 'مسجد' ? '🕌 ' : ty === 'ديوانية' || ty === 'منزل' ? '🏠 ' : '🕌 ') + (ty !== 'حسينية' && name.indexOf(ty) < 0 ? ty + ' ' : ty === 'حسينية' && name.indexOf('حسينية') < 0 ? 'حسينية ' : '') + name);
+    const pv = pm && isPriv(pm); if (pv) L.push('🕯️ ' + [pm.mtype ? 'مجلس ' + pm.mtype : 'مجلس', pm.deceased ? 'عن روح ' + pm.deceased : ''].filter(Boolean).join(' '));   // 🕯️ مجلس خاص: نوعه ومن عن روحه، بلا أسماء العائلة
+    const ty = h.type || (pv && !h.name ? 'منزل' : 'حسينية'), ownN = /^(منزل|بيت|ديوانية|ديوان|صالة|قاعة|مسجد|حسينية|جامع)/.test(name);
+    L.push((ty === 'مسجد' || /^(مسجد|جامع)/.test(name) ? '🕌 ' : ty === 'ديوانية' || ty === 'منزل' || /^(منزل|بيت|ديوان|صالة|قاعة)/.test(name) ? '🏠 ' : '🕌 ') + (ownN ? '' : ty !== 'حسينية' && name.indexOf(ty) < 0 ? ty + ' ' : ty === 'حسينية' && name.indexOf('حسينية') < 0 ? 'حسينية ' : '') + name);
     if (iso || time) { const d = iso ? new Date(iso + 'T12:00:00') : null, td = isoOf(new Date()), tm = isoOf(new Date(Date.now() + 864e5)); const tt = String(time || '').match(/^(\d{1,2}):(\d{2})/);
       L.push('📅 المجلس ' + (iso ? (iso === td ? 'اليوم ' : iso === tm ? 'غداً ' : 'يوم ') + DN[d.getDay()] + (iso === td || iso === tm ? '' : ' ' + d.getDate() + '/' + (d.getMonth() + 1)) : '') + (tt ? ' · ⏰ ' + ((+tt[1] % 12) || 12) + ':' + tt[2] + ' ' + (+tt[1] >= 12 ? 'م' : 'ص') : '')); }
     if (h.addressText || h.address) L.push('📍 العنوان: ' + (h.addressText || h.address));
     if (h.map) L.push('🗺️ الموقع على الخريطة' + (h.mapExact ? '' : ' (تقريبي)') + ':\n' + h.map);
-    const ph = (h.phones && h.phones.length ? h.phones : h.phone ? [{ phone: h.phone }] : []).map((q) => q.phone).filter(Boolean);
-    if (ph.length) L.push('📞 للتواصل' + (h.owner ? ' (' + h.owner + ')' : '') + ': ' + ph.join(' · '));
+    const ph = pv && pm.ophone ? [pm.ophone] : (h.phones && h.phones.length ? h.phones : h.phone ? [{ phone: h.phone }] : []).map((q) => q.phone).filter(Boolean), own = pv && (pm.owner || pm.ophone) ? pm.owner : h.owner;
+    if (ph.length) L.push('📞 للتواصل' + (own ? ' (' + own + ')' : '') + ': ' + ph.join(' · '));
     return { text: L.join('\n'), miss: [!(h.addressText || h.address) && 'العنوان', !h.map && 'الخريطة', !ph.length && 'الهاتف'].filter(Boolean), found: !!h.name };
   };
   const majRow = (m) => '<div class="item" data-maj="' + esc(m.id) + '"><div class="row"><span class="b" dir="ltr">' + esc(m.time || '—') + '</span><span class="grow">' +
     (isPriv(m) ? '<span class="ptag">🕯️ ' + esc(privTitle(m)) + '</span><br>' : '') + '<span class="t' + (m.status === 'ملغى' ? ' mut" style="text-decoration:line-through' : '') + '">' + esc(m.husseiniya) + '</span>' +
     (m._pend ? ' <span class="badge" title="بانتظار الرفع">⏳</span>' : '') + (m.status === 'تمّ' ? ' <span class="tag">✔️ تمّ</span>' : m.status === 'ملغى' ? ' <span class="tag">🚫 ملغى</span>' : '') +
     '<div class="mut sm">' + esc(dayCell(m.iso)) + ' · ' + esc(hijriOf(m.iso)) + '</div>' +
-    (majItems(m).length ? '<div class="sm">' + majItems(m).map((x) => esc(x.icon + ' ' + x.t)).join(' · ') + '</div>' : '') + '</span>' + (!isPriv(m) && m.status !== 'ملغى' ? shareBtn(m.husseiniya, m.iso, m.time) : '') + '</div></div>';
+    (majItems(m).length ? '<div class="sm">' + majItems(m).map((x) => esc(x.icon + ' ' + x.t)).join(' · ') + '</div>' : '') + '</span>' + (m.husseiniya && m.status !== 'ملغى' ? shareBtn(m.husseiniya, m.iso, m.time, m) : '') + '</div></div>';
   const lecRow = (l, extra) => '<div class="item" data-lec="' + l.row + '"><div class="t">' + esc(l.title) + (l._pend ? ' <span class="badge">⏳</span>' : '') + '</div><div class="mut sm">📁 ' + esc(l.folder) + (l.rate ? ' · ⭐ ' + esc(l.rate) : '') + (l.tags.length ? ' · ' + l.tags.map((t) => '<span class="tag">' + esc(t) + '</span>').join('') : '') + '</div>' + (extra || '') + '</div>';
 
   const VIEWS = {
@@ -706,8 +708,8 @@
     return el;
   }
   window.addEventListener('popstate', () => { const s = $$('.sheet').pop(); if (s) s._close(); });
-  async function openLec(row) {
-    const l = LEC.find((x) => x.row === +row); if (!l) return;
+  async function openLec(row, opt) {
+    const l = LEC.find((x) => x.row === +row); if (!l) return null;
     const R = readsOf(l.title);
     const el = sheet('📚 ' + esc(l.title),
       '<div class="card"><div class="t" style="font-size:17px">' + esc(l.title) + '</div>' + (l.orig && l.orig !== l.title ? '<div class="mut sm">الأصلي: ' + esc(l.orig) + '</div>' : '') +
@@ -723,12 +725,25 @@
       if (e.target.id === 'noteEd') { const box = $('#noteBox', el); box.innerHTML = '<textarea class="in" id="noteIn">' + esc(l.notes) + '</textarea><button class="btn s" id="noteSave" style="margin-top:6px">💾 احفظ</button>'; return; }
       if (e.target.id === 'noteSave') { const v = $('#noteIn', el).value; await queue({ lec: { row: l.row, title: l.title, notes: v }, label: '📝 ملاحظات «' + l.title + '»' }); $('#noteBox', el).textContent = v; }
     });
+    // 📌 نتذكر النص المفتوح وموضع القراءة: إن أُطفئت الشاشة وأعاد الهاتف تحميل التطبيق رجعنا إليه
+    const LK = 'offLastLec', save = (y) => { try { localStorage.setItem(LK, JSON.stringify({ row: l.row, y: y || 0, t: Date.now() })); } catch (e) {} };
+    save(opt && opt.y); let st = 0;
+    el.addEventListener('scroll', () => { clearTimeout(st); st = setTimeout(() => save(el.scrollTop), 300); }, { passive: true });
+    const cl = el._close; el._close = () => { try { localStorage.removeItem(LK); } catch (e) {} cl(); };
     const tb = $('#txtBox', el);
-    if (!l.fileId) { tb.textContent = 'لا ملف مرتبط بهذه الفقرة.'; return; }
+    if (!l.fileId) { tb.textContent = 'لا ملف مرتبط بهذه الفقرة.'; return el; }
     const parts = (await txtOf(l.fileId)).sort((a, b) => String(a.part).localeCompare(String(b.part), 'en', { numeric: true }));
-    if (!parts.length) { tb.innerHTML = 'النص غير محفوظ على الجهاز بعد (يُنزَّل مع المزامنة إن كان مفهرساً في البرنامج).'; return; }
+    if (!parts.length) { tb.innerHTML = 'النص غير محفوظ على الجهاز بعد (يُنزَّل مع المزامنة إن كان مفهرساً في البرنامج).'; return el; }
     tb.className = 'txt'; tb.innerHTML = parts.map((p) => esc(p.text)).join('\n');
     const hint = document.createElement('div'); hint.className = 'mut xs'; hint.textContent = 'النص من «فهرس المتن» (بلا تشكيل). للنسخة الأصلية افتح الملف.'; tb.parentNode.insertBefore(hint, tb);
+    if (opt && opt.y) el.scrollTop = opt.y;
+    return el;
+  }
+  async function restoreLec() {   // بعد إعادة التحميل: افتح آخر نص كان مفتوحاً (خلال 12 ساعة) في موضعه نفسه
+    let o = null; try { o = JSON.parse(localStorage.getItem('offLastLec') || 'null'); } catch (e) {}
+    if (!o || !o.row || Date.now() - (o.t || 0) > 12 * 3600000 || $$('.sheet').length) return;
+    if (!LEC.find((x) => x.row === +o.row)) return;
+    await openLec(o.row, { y: o.y });
   }
   function openMaj(id) {
     const m = MAJ.find((x) => x.id === String(id)); if (!m) return;
@@ -859,7 +874,7 @@
   document.addEventListener('click', async (e) => {
     if (!UNLOCKED) return;
     const t = e.target;
-    const hsb = t.closest('[data-hshare]'); if (hsb) { e.stopPropagation(); const nm = hsb.getAttribute('data-hshare'), r = husShareText(nm, hsb.getAttribute('data-hiso'), hsb.getAttribute('data-htime')); openText('📤 ' + nm, r.text, !r.found ? 'ليس في دليل الحسينيات — أضف عنوانه وموقعه من البرنامج.' : r.miss.length ? '⚠️ لا ' + r.miss.join(' ولا ') + ' لهذا المكان في الدليل — أضفها من البرنامج لتُرسَل كل مرة.' : 'عدّل النص إن شئت، ثم 💬 واتساب أو 📋 انسخ.'); return; }
+    const hsb = t.closest('[data-hshare]'); if (hsb) { e.stopPropagation(); const nm = hsb.getAttribute('data-hshare'), r = husShareText(nm, hsb.getAttribute('data-hiso'), hsb.getAttribute('data-htime'), MAJ.find((x) => String(x.id) === hsb.getAttribute('data-hmid'))); openText('📤 ' + nm, r.text, !r.found ? 'ليس في دليل الحسينيات — أضف عنوانه وموقعه من البرنامج.' : r.miss.length ? '⚠️ لا ' + r.miss.join(' ولا ') + ' لهذا المكان في الدليل — أضفها من البرنامج لتُرسَل كل مرة.' : 'عدّل النص إن شئت، ثم 💬 واتساب أو 📋 انسخ.'); return; }
     const tab = t.closest('[data-tab]'); if (tab) { go(tab.getAttribute('data-tab')); return; }
     const g = t.closest('[data-go]'); if (g) { e.preventDefault(); go(g.getAttribute('data-go')); return; }
     if (t.closest('#syncChip')) { sync(); return; }
@@ -912,7 +927,7 @@
     if (t.id === 'bkIn') { devImportPick(); return; }
     if (t.id === 'setWipe') { if (confirm('مسح كل بيانات التطبيق من هذا الجهاز؟')) wipe(); return; }
   });
-  function lockNow() { pinScreen('enter', () => { window.onkeydown = null; $('#app').onclick = null; render(); }); }
+  function lockNow() { document.body.classList.add('locked'); pinScreen('enter', () => { window.onkeydown = null; $('#app').onclick = null; document.body.classList.remove('locked'); render(); }); }   // 🔐 القفل يُخفي الصفحات المفتوحة ولا يغلقها: بعد الرمز ترجع كما كانت
   // يُقفل بعد 5 دقائق في الخلفية
   document.addEventListener('visibilitychange', () => { if (document.hidden) lastActive = Date.now(); else if (UNLOCKED && CFG.pin && Date.now() - lastActive > 5 * 60000) { UNLOCKED = false; lockNow(); } else if (UNLOCKED && online() && Date.now() - (CFG.lastSync || 0) > 6 * 3600000) sync(); });
   window.addEventListener('online', () => { syncUi(); if (UNLOCKED && OPS.some((o) => o.st === 'pending')) sync({ noText: true }); });
@@ -922,7 +937,7 @@
   async function boot(fresh) {
     window.onkeydown = null; $('#app').onclick = null;
     SNAP = await kvGet('snap') || null; OPS = await opsAll(); buildData();
-    UNLOCKED = true; render();
+    UNLOCKED = true; render(); restoreLec().catch(() => {});
     if (online() && (fresh || !CFG.lastSync || Date.now() - CFG.lastSync > 6 * 3600000)) sync();
   }
   (async function start() {
@@ -936,5 +951,5 @@
     if (!CFG.pin) { pinScreen('set', () => boot(true)); return; }
     pinScreen('enter', () => boot(false));
   })();
-  window.__offApp = { get CFG() { return CFG; }, get MAJ() { return MAJ; }, get LEC() { return LEC; }, get OPS() { return OPS; }, sync, go };
+  window.__offApp = { get CFG() { return CFG; }, get MAJ() { return MAJ; }, get LEC() { return LEC; }, get OPS() { return OPS; }, sync, go, openLec, lock: () => { UNLOCKED = false; lockNow(); } };
 })();
